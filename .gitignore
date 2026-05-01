@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scripts locais com chaves (nao subir para o github)
+setup-stripe.js
+ENVIAR-GITHUB.bat
+push-github.ps1
+FAZER-PUSH.bat
+INSTALAR-SUPABASE.bat
+CRIAR-PLANOS-STRIPE.bat
+PUSH-ATUALIZACAO.bat
