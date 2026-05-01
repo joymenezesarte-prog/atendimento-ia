@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Clock, Phone, FileText, RefreshCw, X as XIcon, Send } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Phone, FileText, RefreshCw, X as XIcon, Send, Calendar } from "lucide-react";
 
 const months = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const daysOfWeek = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
