@@ -1,56 +1,138 @@
 "use client";
 
-import { Search, Clock } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Search, Clock, MessageSquare, Loader2 } from "lucide-react";
 
-const conversations = [
-  { lead: "João Silva", lastMsg: "Quero agendar uma limpeza para amanhã", status: "active", score: 8, time: "14:32", agent: "Sofia" },
-  { lead: "Fernanda Costa", lastMsg: "Qual o preço do clareamento?", status: "active", score: 6, time: "14:15", agent: "Sofia" },
-  { lead: "Pedro Alves", lastMsg: "Vocês aceitam convênio?", status: "active", score: 9, time: "13:50", agent: "Sofia" },
-  { lead: "Marcos Lima", lastMsg: "Vou pensar...", status: "closed", score: 3, time: "12:30", agent: "Sofia" },
-  { lead: "Ana Souza", lastMsg: "Quero marcar urgente!", status: "active", score: 9, time: "11:00", agent: "Sofia" },
-];
+interface Conversation {
+  id: string;
+  lead_name: string;
+  lead_phone?: string;
+  channel: string;
+  status: string;
+  score: number;
+  last_message?: string;
+  last_message_at: string;
+  summary?: string;
+}
 
 function scoreColor(s: number) { return s >= 7 ? "var(--green)" : s >= 4 ? "var(--warning)" : "var(--danger)"; }
 
+function timeAgo(dateStr: string) {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000 / 60);
+  if (diff < 60) return `${diff}m`;
+  if (diff < 1440) return `${Math.floor(diff / 60)}h`;
+  return new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+const channelLabel: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  website: "Website",
+};
+
 export default function ClientConversationsPage() {
+  const router = useRouter();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const fetchConversations = useCallback(async () => {
+    try {
+      const res = await fetch("/api/conversations");
+      if (res.status === 401) { router.push("/"); return; }
+      if (res.ok) setConversations(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => { fetchConversations(); }, [fetchConversations]);
+
+  const filtered = conversations.filter(c => {
+    const matchSearch = !search
+      || c.lead_name.toLowerCase().includes(search.toLowerCase())
+      || c.last_message?.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === "all" || c.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const activeCount = conversations.filter(c => c.status === "active").length;
+
   return (
     <div>
-      <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800, marginBottom: "24px" }}>Conversas</h2>
-      <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
-        <div style={{ position: "relative", flex: 1, maxWidth: "280px" }}>
-          <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--gray-400)" }} />
-          <input className="input" placeholder="Buscar lead..." style={{ paddingLeft: "36px" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+        <div>
+          <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800 }}>Conversas</h2>
+          <p style={{ color: "var(--gray-500)", fontSize: "13px", marginTop: "2px" }}>{activeCount} ativas · {conversations.length} total</p>
         </div>
-        <select className="input" style={{ width: "auto" }}>
-          <option>Todos</option><option>Ativas</option><option>Fechadas</option>
+      </div>
+
+      <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
+        <div style={{ position: "relative", flex: 1, maxWidth: "300px" }}>
+          <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--gray-400)" }} />
+          <input className="input" placeholder="Buscar conversa..." style={{ paddingLeft: "36px" }} value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="input" style={{ width: "auto" }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="all">Todas</option>
+          <option value="active">Ativas</option>
+          <option value="closed">Fechadas</option>
+          <option value="transferred">Transferidas</option>
         </select>
       </div>
-      <div className="card" style={{ overflow: "hidden" }}>
-        {conversations.map((conv, i) => (
-          <div key={i} style={{
-            display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px",
-            borderBottom: i < conversations.length - 1 ? "1px solid var(--gray-50)" : "none",
-            cursor: "pointer", transition: "background 0.15s",
-          }}
-            onMouseEnter={e => e.currentTarget.style.background = "var(--gray-50)"}
-            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-          >
-            <div className="score-dot" style={{ background: scoreColor(conv.score) }}>{conv.score}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{conv.lead}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--gray-400)" }}>
-                  <Clock size={11} /><span style={{ fontSize: "11px" }}>{conv.time}</span>
+
+      {loading ? (
+        <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}>
+          <Loader2 size={28} style={{ color: "var(--green)", animation: "spin 1s linear infinite" }} />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card" style={{ padding: "64px", textAlign: "center" }}>
+          <MessageSquare size={40} style={{ color: "var(--gray-300)", margin: "0 auto 12px" }} />
+          <p style={{ color: "var(--gray-400)", fontSize: "14px" }}>
+            {conversations.length === 0
+              ? "Nenhuma conversa ainda. Ative seus agentes para começar!"
+              : "Nenhuma conversa encontrada."}
+          </p>
+        </div>
+      ) : (
+        <div className="card" style={{ overflow: "hidden" }}>
+          {filtered.map((conv, i) => (
+            <div key={conv.id} style={{
+              display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px",
+              borderBottom: i < filtered.length - 1 ? "1px solid var(--gray-50)" : "none",
+              cursor: "pointer", transition: "background 0.15s",
+            }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--gray-50)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              <div className="score-dot" style={{ background: scoreColor(conv.score), flexShrink: 0 }}>{conv.score}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{conv.lead_name}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--gray-400)", flexShrink: 0 }}>
+                    <Clock size={11} />
+                    <span style={{ fontSize: "11px" }}>{timeAgo(conv.last_message_at)}</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "2px" }}>
+                  <span style={{ color: "var(--gray-400)", fontSize: "11px", background: "var(--gray-100)", padding: "1px 6px", borderRadius: "3px" }}>
+                    {channelLabel[conv.channel] || conv.channel}
+                  </span>
+                  <p style={{ color: "var(--gray-500)", fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {conv.last_message || conv.summary || "Sem mensagens"}
+                  </p>
                 </div>
               </div>
-              <p style={{ color: "var(--gray-500)", fontSize: "12px", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{conv.lastMsg}</p>
+              <span className={`badge ${conv.status === "active" ? "badge-green" : conv.status === "transferred" ? "badge-yellow" : "badge-gray"}`} style={{ flexShrink: 0 }}>
+                {conv.status === "active" ? "Ativa" : conv.status === "transferred" ? "Transferida" : "Fechada"}
+              </span>
             </div>
-            <span className={`badge ${conv.status === "active" ? "badge-green" : "badge-gray"}`}>
-              {conv.status === "active" ? "Ativa" : "Fechada"}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

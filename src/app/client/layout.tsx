@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import MouseGlow from "@/components/MouseGlow";
 import {
@@ -8,6 +8,13 @@ import {
   BarChart3, CreditCard, Users, ChevronLeft, ChevronRight,
   Bell, LogOut
 } from "lucide-react";
+import { createClient } from "@/lib/supabase";
+
+interface ClientInfo {
+  company_name: string;
+  contact_name: string;
+  plan_id: string | null;
+}
 
 const menuItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/client" },
@@ -19,12 +26,47 @@ const menuItems = [
   { id: "team", label: "Equipe", icon: Users, path: "/client/team" },
 ];
 
+const planLabels: Record<string, string> = {
+  atendimento: "Atendimento IA",
+  vendas: "Vendas IA",
+  operacao: "Operação IA",
+};
+
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
+  const [userInitial, setUserInitial] = useState("U");
 
   const isActive = (path: string) => path === "/client" ? pathname === "/client" : pathname.startsWith(path);
+
+  useEffect(() => {
+    async function loadInfo() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const initial = user.email?.charAt(0).toUpperCase() || "U";
+          setUserInitial(initial);
+        }
+        const res = await fetch("/api/clients/me");
+        if (res.ok) setClientInfo(await res.json());
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    loadInfo();
+  }, []);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+  };
+
+  const companyName = clientInfo?.company_name || "Minha Empresa";
+  const planLabel = clientInfo?.plan_id ? planLabels[clientInfo.plan_id] : null;
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--gray-50)" }}>
@@ -55,8 +97,8 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         {!collapsed && (
           <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--gray-100)" }}>
             <p style={{ color: "var(--gray-400)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "1px", fontWeight: 600 }}>Empresa</p>
-            <p style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700, marginTop: "4px" }}>Clínica Sorriso</p>
-            <span className="badge badge-green" style={{ marginTop: "6px" }}>Vendas IA</span>
+            <p style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700, marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{companyName}</p>
+            {planLabel && <span className="badge badge-green" style={{ marginTop: "6px" }}>{planLabel}</span>}
           </div>
         )}
 
@@ -93,14 +135,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         )}
 
         <div style={{ padding: collapsed ? "12px 8px" : "12px 16px", borderTop: "1px solid var(--gray-100)", display: "flex", alignItems: "center", gap: "10px", justifyContent: collapsed ? "center" : "flex-start" }}>
-          <div style={{ width: "32px", height: "32px", borderRadius: "var(--radius-sm)", background: "var(--green-50)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--green)", fontWeight: 700, fontSize: "13px", flexShrink: 0 }}>J</div>
+          <div style={{ width: "32px", height: "32px", borderRadius: "var(--radius-sm)", background: "var(--green-50)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--green)", fontWeight: 700, fontSize: "13px", flexShrink: 0 }}>
+            {userInitial}
+          </div>
           {!collapsed && (
             <>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>Dr. João</div>
-                <div style={{ color: "var(--gray-400)", fontSize: "11px" }}>Admin</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clientInfo?.contact_name || companyName}</div>
+                <div style={{ color: "var(--gray-400)", fontSize: "11px" }}>{planLabel || "Sem plano"}</div>
               </div>
-              <button onClick={() => router.push("/")} className="btn-ghost" style={{ padding: "4px" }}><LogOut size={16} /></button>
+              <button onClick={handleLogout} className="btn-ghost" style={{ padding: "4px" }}><LogOut size={16} /></button>
             </>
           )}
         </div>

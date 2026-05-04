@@ -138,7 +138,7 @@ export default function ReportsPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
               <XAxis dataKey="month" tick={{ fill: "#9CA3AF", fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "#9CA3AF", fontSize: 12 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `R$${v / 1000}k`} />
-              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "13px", boxShadow: "var(--shadow-md)" }} formatter={(v: number) => [`R$ ${v.toLocaleString()}`, "MRR"]} />
+              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "13px", boxShadow: "var(--shadow-md)" }} formatter={(v: unknown) => [`R$ ${(v as number)?.toLocaleString() ?? 0}`, "MRR"]} />
               <Area type="monotone" dataKey="value" stroke="#22C55E" strokeWidth={2.5} fill="url(#greenGrad)" dot={{ fill: "#22C55E", strokeWidth: 0, r: 4 }} />
             </AreaChart>
           </ResponsiveContainer>
@@ -149,7 +149,7 @@ export default function ReportsPage() {
           <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700, marginBottom: "8px" }}>Distribuição por canal</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={channelDistribution} cx="50%" cy="50%" outerRadius={75} dataKey="value" stroke="none" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+              <Pie data={channelDistribution} cx="50%" cy="50%" outerRadius={75} dataKey="value" stroke="none" label={({ name, percent }) => `${name} ${(((percent ?? 0) * 100).toFixed(0))}%`} labelLine={false}>
                 {channelDistribution.map((_, i) => <Cell key={i} fill={CHANNEL_COLORS[i]} />)}
               </Pie>
               <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "13px", boxShadow: "var(--shadow-md)" }} />

@@ -1,68 +1,143 @@
 "use client";
 
-import { Target, Calendar, Star, TrendingUp, ArrowUpRight } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Target, Calendar, Star, TrendingUp, ArrowUpRight, Loader2 } from "lucide-react";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   RadialBarChart, RadialBar, ResponsiveContainer, AreaChart, Area, Legend
 } from "recharts";
 
-/* ===== DATA ===== */
-const stats = [
-  { label: "Leads este mês", value: "45", change: "+8 esta semana", icon: Target },
-  { label: "Agendamentos", value: "34", change: "+12 vs mês passado", icon: Calendar },
-  { label: "Score médio", value: "7.2", change: "+0.5", icon: Star },
-  { label: "Conversão", value: "34%", change: "+5%", icon: TrendingUp },
-];
+interface Lead {
+  id: string;
+  stage: string;
+  score: number;
+  created_at: string;
+  service?: string;
+}
 
-const leadsByStatus = [
-  { name: "Agendado", value: 28, color: "#22C55E" },
-  { name: "Orçamento", value: 8, color: "#F59E0B" },
-  { name: "Novo", value: 5, color: "#3B82F6" },
-  { name: "Frio", value: 4, color: "#9CA3AF" },
-];
+interface Appointment {
+  id: string;
+  date: string;
+  status: string;
+  service?: string;
+}
 
-const weeklyLeads = [
-  { day: "Seg", novos: 5, agendados: 3 },
-  { day: "Ter", novos: 8, agendados: 5 },
-  { day: "Qua", novos: 6, agendados: 4 },
-  { day: "Qui", novos: 10, agendados: 7 },
-  { day: "Sex", novos: 12, agendados: 8 },
-  { day: "Sáb", novos: 4, agendados: 2 },
-  { day: "Dom", novos: 2, agendados: 1 },
-];
+interface Conversation {
+  id: string;
+  status: string;
+  score: number;
+}
 
-const scoreDistribution = [
-  { range: "1-3", qtd: 5 },
-  { range: "4-6", qtd: 12 },
-  { range: "7-8", qtd: 18 },
-  { range: "9-10", qtd: 10 },
-];
+const STAGE_COLORS: Record<string, string> = {
+  new: "#3B82F6",
+  quote_sent: "#F59E0B",
+  waiting_payment: "#F97316",
+  scheduled: "#22C55E",
+  done: "#9CA3AF",
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  new: "Novo",
+  quote_sent: "Orçamento",
+  waiting_payment: "Aguard. Pgto",
+  scheduled: "Agendado",
+  done: "Concluído",
+};
+
 const SCORE_COLORS = ["#EF4444", "#F59E0B", "#4ADE80", "#22C55E"];
+const SERVICE_COLORS = ["#22C55E", "#4ADE80", "#86EFAC", "#BBF7D0", "#DCFCE7", "#A7F3D0"];
 
-const noShowRate = [{ name: "Presentes", value: 88, fill: "#22C55E" }, { name: "No-show", value: 12, fill: "#E5E7EB" }];
+function groupByDay(leads: Lead[]) {
+  const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  const counts: Record<string, { novos: number; agendados: number }> = {};
+  days.forEach(d => (counts[d] = { novos: 0, agendados: 0 }));
+  leads.forEach(l => {
+    const d = days[new Date(l.created_at).getDay()];
+    counts[d].novos++;
+    if (l.stage === "scheduled") counts[d].agendados++;
+  });
+  return days.map(d => ({ day: d, ...counts[d] }));
+}
 
-const appointmentsByService = [
-  { name: "Limpeza", value: 12 },
-  { name: "Clareamento", value: 8 },
-  { name: "Avaliação", value: 6 },
-  { name: "Implante", value: 4 },
-  { name: "Ortodontia", value: 4 },
-];
-const SERVICE_COLORS = ["#22C55E", "#4ADE80", "#86EFAC", "#BBF7D0", "#DCFCE7"];
-
-const reviewsOverTime = [
-  { semana: "Sem 1", pedidas: 4, recebidas: 3 },
-  { semana: "Sem 2", pedidas: 5, recebidas: 4 },
-  { semana: "Sem 3", pedidas: 6, recebidas: 3 },
-  { semana: "Sem 4", pedidas: 3, recebidas: 2 },
-];
-
-const conversionRadial = [
-  { name: "Conversão", value: 34, fill: "#22C55E" },
-];
-
-/* ===== COMPONENT ===== */
 export default function ClientReportsPage() {
+  const router = useRouter();
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [lRes, aRes, cRes] = await Promise.all([
+        fetch("/api/leads"),
+        fetch("/api/appointments"),
+        fetch("/api/conversations"),
+      ]);
+      if (lRes.status === 401) { router.push("/"); return; }
+      if (lRes.ok) setLeads(await lRes.json());
+      if (aRes.ok) setAppointments(await aRes.json());
+      if (cRes.ok) setConversations(await cRes.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", padding: "80px" }}>
+        <Loader2 size={28} style={{ color: "var(--green)", animation: "spin 1s linear infinite" }} />
+      </div>
+    );
+  }
+
+  // Computed stats
+  const totalLeads = leads.length;
+  const totalApts = appointments.length;
+  const avgScore = leads.length ? Math.round(leads.reduce((s, l) => s + l.score, 0) / leads.length * 10) / 10 : 0;
+  const scheduled = leads.filter(l => l.stage === "scheduled" || l.stage === "done").length;
+  const conversionRate = totalLeads > 0 ? Math.round((scheduled / totalLeads) * 100) : 0;
+
+  // Lead status distribution
+  const stageCount: Record<string, number> = {};
+  leads.forEach(l => { stageCount[l.stage] = (stageCount[l.stage] || 0) + 1; });
+  const leadsByStatus = Object.entries(stageCount).map(([stage, value]) => ({
+    name: STAGE_LABELS[stage] || stage,
+    value,
+    color: STAGE_COLORS[stage] || "#9CA3AF",
+  }));
+
+  // Score distribution
+  const scoreDist = [
+    { range: "1-3", qtd: leads.filter(l => l.score >= 1 && l.score <= 3).length },
+    { range: "4-6", qtd: leads.filter(l => l.score >= 4 && l.score <= 6).length },
+    { range: "7-8", qtd: leads.filter(l => l.score >= 7 && l.score <= 8).length },
+    { range: "9-10", qtd: leads.filter(l => l.score >= 9 && l.score <= 10).length },
+  ];
+
+  // Appointments by service
+  const svcCount: Record<string, number> = {};
+  appointments.forEach(a => { const s = a.service || "Outros"; svcCount[s] = (svcCount[s] || 0) + 1; });
+  const aptsByService = Object.entries(svcCount).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
+
+  // Attendance rate
+  const confirmed = appointments.filter(a => a.status === "confirmed" || a.status === "completed").length;
+  const attendanceRate = totalApts > 0 ? Math.round((confirmed / totalApts) * 100) : 88;
+
+  // Weekly leads
+  const weeklyLeads = groupByDay(leads);
+
+  const stats = [
+    { label: "Total de Leads", value: String(totalLeads), change: `${leads.filter(l => l.stage === "new").length} novos`, icon: Target },
+    { label: "Agendamentos", value: String(totalApts), change: "Total", icon: Calendar },
+    { label: "Score médio", value: String(avgScore), change: "Dos leads", icon: Star },
+    { label: "Conversão", value: `${conversionRate}%`, change: "Lead → Agendado", icon: TrendingUp },
+  ];
+
   return (
     <div>
       <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800, marginBottom: "24px" }}>Relatórios</h2>
@@ -98,21 +173,27 @@ export default function ClientReportsPage() {
         {/* Lead status pie */}
         <div className="card" style={{ padding: "20px" }}>
           <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Status dos leads</h4>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie data={leadsByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
-                {leadsByStatus.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px", boxShadow: "var(--shadow-md)" }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "center" }}>
-            {leadsByStatus.map((item, i) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "var(--gray-500)" }}>
-                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: item.color }} />{item.name} ({item.value})
-              </span>
-            ))}
-          </div>
+          {leadsByStatus.length === 0 ? (
+            <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-300)", fontSize: "13px" }}>Sem dados</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={leadsByStatus} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
+                    {leadsByStatus.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px" }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", justifyContent: "center" }}>
+                {leadsByStatus.map((item, i) => (
+                  <span key={i} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "var(--gray-500)" }}>
+                    <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: item.color }} />{item.name} ({item.value})
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Weekly leads bar */}
@@ -123,9 +204,9 @@ export default function ClientReportsPage() {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
               <XAxis dataKey="day" tick={{ fill: "#9CA3AF", fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} axisLine={false} tickLine={false} width={24} />
-              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px", boxShadow: "var(--shadow-md)" }} cursor={{ fill: "rgba(34,197,94,0.04)" }} />
-              <Bar dataKey="novos" name="Novos" fill="#22C55E" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="agendados" name="Agendados" fill="#BBF7D0" radius={[3, 3, 0, 0]} />
+              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px" }} cursor={{ fill: "rgba(34,197,94,0.04)" }} />
+              <Bar dataKey="novos" name="Novos" fill="#22C55E" radius={[3,3,0,0]} />
+              <Bar dataKey="agendados" name="Agendados" fill="#BBF7D0" radius={[3,3,0,0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -134,13 +215,13 @@ export default function ClientReportsPage() {
         <div className="card" style={{ padding: "20px" }}>
           <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Distribuição de Score</h4>
           <ResponsiveContainer width="100%" height={190}>
-            <BarChart data={scoreDistribution}>
+            <BarChart data={scoreDist}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
               <XAxis dataKey="range" tick={{ fill: "#9CA3AF", fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} axisLine={false} tickLine={false} width={24} />
-              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px", boxShadow: "var(--shadow-md)" }} />
+              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px" }} />
               <Bar dataKey="qtd" name="Leads">
-                {scoreDistribution.map((_, i) => <Cell key={i} fill={SCORE_COLORS[i]} />)}
+                {scoreDist.map((_, i) => <Cell key={i} fill={SCORE_COLORS[i]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -156,31 +237,35 @@ export default function ClientReportsPage() {
         {/* Services pie */}
         <div className="card" style={{ padding: "20px" }}>
           <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Por serviço</h4>
-          <ResponsiveContainer width="100%" height={190}>
-            <PieChart>
-              <Pie data={appointmentsByService} cx="50%" cy="50%" outerRadius={70} dataKey="value" stroke="none" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                {appointmentsByService.map((_, i) => <Cell key={i} fill={SERVICE_COLORS[i]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px", boxShadow: "var(--shadow-md)" }} />
-            </PieChart>
-          </ResponsiveContainer>
+          {aptsByService.length === 0 ? (
+            <div style={{ height: "190px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gray-300)", fontSize: "13px" }}>Sem dados</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={190}>
+              <PieChart>
+                <Pie data={aptsByService} cx="50%" cy="50%" outerRadius={70} dataKey="value" stroke="none" label={({ name, percent }) => `${name} ${(((percent ?? 0) * 100).toFixed(0))}%`} labelLine={false}>
+                  {aptsByService.map((_, i) => <Cell key={i} fill={SERVICE_COLORS[i % SERVICE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
-        {/* No-show radial */}
+        {/* Attendance rate radial */}
         <div className="card" style={{ padding: "20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
           <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "8px", alignSelf: "flex-start" }}>Taxa de presença</h4>
           <div style={{ position: "relative", width: "160px", height: "160px" }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadialBarChart cx="50%" cy="50%" innerRadius="65%" outerRadius="90%" data={[{ value: 88 }]} startAngle={90} endAngle={-270}>
+              <RadialBarChart cx="50%" cy="50%" innerRadius="65%" outerRadius="90%" data={[{ value: attendanceRate }]} startAngle={90} endAngle={-270}>
                 <RadialBar dataKey="value" fill="#22C55E" background={{ fill: "var(--gray-100)" }} cornerRadius={10} />
               </RadialBarChart>
             </ResponsiveContainer>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: "28px", fontWeight: 800, color: "var(--gray-900)" }}>88%</span>
+              <span style={{ fontSize: "28px", fontWeight: 800, color: "var(--gray-900)" }}>{attendanceRate}%</span>
               <span style={{ fontSize: "11px", color: "var(--gray-400)" }}>presença</span>
             </div>
           </div>
-          <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>12% no-show · 4 faltas este mês</p>
+          <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>{confirmed} confirmados de {totalApts}</p>
         </div>
 
         {/* Conversion gauge */}
@@ -188,75 +273,37 @@ export default function ClientReportsPage() {
           <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "8px", alignSelf: "flex-start" }}>Taxa de conversão</h4>
           <div style={{ position: "relative", width: "160px", height: "160px" }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadialBarChart cx="50%" cy="50%" innerRadius="65%" outerRadius="90%" data={conversionRadial} startAngle={90} endAngle={-270}>
+              <RadialBarChart cx="50%" cy="50%" innerRadius="65%" outerRadius="90%" data={[{ value: conversionRate }]} startAngle={90} endAngle={-270}>
                 <RadialBar dataKey="value" fill="#22C55E" background={{ fill: "var(--gray-100)" }} cornerRadius={10} />
               </RadialBarChart>
             </ResponsiveContainer>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: "28px", fontWeight: 800, color: "var(--gray-900)" }}>34%</span>
+              <span style={{ fontSize: "28px", fontWeight: 800, color: "var(--gray-900)" }}>{conversionRate}%</span>
               <span style={{ fontSize: "11px", color: "var(--gray-400)" }}>conversão</span>
             </div>
           </div>
-          <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>+5% vs mês passado</p>
+          <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>{scheduled} de {totalLeads} leads convertidos</p>
         </div>
       </div>
 
-      {/* Section: Avaliações Google */}
+      {/* Summary table */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
         <Star size={16} style={{ color: "var(--green)" }} />
-        <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700 }}>Avaliações Google</h3>
+        <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700 }}>Resumo Geral</h3>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "14px" }}>
-        {/* Reviews area chart */}
-        <div className="card" style={{ padding: "20px" }}>
-          <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>Avaliações por semana</h4>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={reviewsOverTime}>
-              <defs>
-                <linearGradient id="greenArea" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22C55E" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#22C55E" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
-              <XAxis dataKey="semana" tick={{ fill: "#9CA3AF", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "#9CA3AF", fontSize: 11 }} axisLine={false} tickLine={false} width={24} />
-              <Tooltip contentStyle={{ background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px", fontSize: "12px", boxShadow: "var(--shadow-md)" }} />
-              <Area type="monotone" dataKey="pedidas" name="Pedidas" stroke="#22C55E" strokeWidth={2} fill="url(#greenArea)" dot={{ fill: "#22C55E", r: 3, strokeWidth: 0 }} />
-              <Area type="monotone" dataKey="recebidas" name="Recebidas" stroke="#4ADE80" strokeWidth={2} fill="transparent" dot={{ fill: "#4ADE80", r: 3, strokeWidth: 0 }} strokeDasharray="5 5" />
-              <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Rating summary */}
-        <div className="card" style={{ padding: "20px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <h4 style={{ color: "var(--gray-700)", fontSize: "13px", fontWeight: 600, marginBottom: "16px", alignSelf: "flex-start" }}>Nota média</h4>
-          <div style={{ position: "relative", width: "140px", height: "140px" }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <RadialBarChart cx="50%" cy="50%" innerRadius="60%" outerRadius="85%" data={[{ value: 96 }]} startAngle={90} endAngle={-270}>
-                <RadialBar dataKey="value" fill="#22C55E" background={{ fill: "var(--gray-100)" }} cornerRadius={10} />
-              </RadialBarChart>
-            </ResponsiveContainer>
-            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: "32px", fontWeight: 800, color: "var(--gray-900)" }}>4.8</span>
-              <span style={{ fontSize: "11px", color: "var(--gray-400)" }}>de 5.0</span>
+      <div className="card" style={{ padding: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "20px" }}>
+          {[
+            { label: "Total de leads", value: totalLeads },
+            { label: "Agendamentos", value: totalApts },
+            { label: "Conversas ativas", value: conversations.filter(c => c.status === "active").length },
+            { label: "Score médio geral", value: avgScore },
+          ].map((item, i) => (
+            <div key={i} style={{ textAlign: "center", padding: "16px", background: "var(--gray-50)", borderRadius: "var(--radius-sm)" }}>
+              <p style={{ color: "var(--gray-900)", fontSize: "28px", fontWeight: 800 }}>{item.value}</p>
+              <p style={{ color: "var(--gray-500)", fontSize: "12px", marginTop: "4px" }}>{item.label}</p>
             </div>
-          </div>
-          <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "6px", width: "100%" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-              <span style={{ color: "var(--gray-500)" }}>Avaliações pedidas</span>
-              <span style={{ color: "var(--gray-900)", fontWeight: 700 }}>18</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-              <span style={{ color: "var(--gray-500)" }}>Avaliações recebidas</span>
-              <span style={{ color: "var(--gray-900)", fontWeight: 700 }}>12</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-              <span style={{ color: "var(--gray-500)" }}>Taxa de resposta</span>
-              <span style={{ color: "var(--green)", fontWeight: 700 }}>67%</span>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

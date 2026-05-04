@@ -1,34 +1,99 @@
 "use client";
 
-import { Target, Calendar, Star, TrendingUp, ArrowUpRight, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Target, Calendar, Star, TrendingUp, ArrowUpRight, Clock, Loader2 } from "lucide-react";
 
-const stats = [
-  { label: "Leads este mês", value: "45", change: "+8 esta semana", icon: Target },
-  { label: "Agendamentos hoje", value: "4", change: "Próximo: 14:30", icon: Calendar },
-  { label: "Score médio", value: "7.2", change: "+0.5 vs mês passado", icon: Star },
-  { label: "Taxa de conversão", value: "34%", change: "+5% vs mês passado", icon: TrendingUp },
-];
+interface DashboardData {
+  totalLeads: number;
+  newLeads: number;
+  activeConversations: number;
+  avgScore: number;
+  todayAppointments: number;
+  agents: { id: string; name: string; status: string; conversations_count: number }[];
+}
 
-const todayAppointments = [
-  { time: "09:00", name: "Maria Santos", service: "Limpeza", status: "confirmed" },
-  { time: "10:30", name: "Carlos Oliveira", service: "Clareamento", status: "confirmed" },
-  { time: "14:30", name: "Ana Lima", service: "Avaliação", status: "pending" },
-  { time: "16:00", name: "Roberto Dias", service: "Implante", status: "confirmed" },
-];
+interface Lead {
+  id: string;
+  name: string;
+  service?: string;
+  score: number;
+  created_at: string;
+  stage: string;
+}
 
-const recentLeads = [
-  { name: "João Silva", interest: "Limpeza dental", score: 8, time: "2 min", agent: "Sofia" },
-  { name: "Fernanda Costa", interest: "Clareamento", score: 6, time: "15 min", agent: "Sofia" },
-  { name: "Pedro Alves", interest: "Implante", score: 9, time: "1h", agent: "Sofia" },
-];
+interface Appointment {
+  id: string;
+  lead_name: string;
+  service?: string;
+  start_time: string;
+  status: string;
+  date: string;
+}
 
 function scoreColor(s: number) { return s >= 7 ? "var(--green)" : s >= 4 ? "var(--warning)" : "var(--danger)"; }
 
+function timeAgo(dateStr: string) {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000 / 60);
+  if (diff < 1) return "agora";
+  if (diff < 60) return `${diff} min`;
+  if (diff < 1440) return `${Math.floor(diff / 60)}h`;
+  return `${Math.floor(diff / 1440)}d`;
+}
+
 export default function ClientDashboard() {
+  const router = useRouter();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [clientName, setClientName] = useState("Dashboard");
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [dashRes, leadsRes, aptsRes, clientRes] = await Promise.all([
+          fetch("/api/dashboard"),
+          fetch("/api/leads"),
+          fetch("/api/appointments?today=true"),
+          fetch("/api/clients/me"),
+        ]);
+        if (dashRes.status === 401) { router.push("/"); return; }
+        if (dashRes.ok) setData(await dashRes.json());
+        if (leadsRes.ok) setLeads((await leadsRes.json()).slice(0, 5));
+        if (aptsRes.ok) setAppointments(await aptsRes.json());
+        if (clientRes.ok) {
+          const c = await clientRes.json();
+          setClientName(c.company_name || c.contact_name || "Dashboard");
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "300px" }}>
+        <Loader2 size={28} style={{ color: "var(--green)", animation: "spin 1s linear infinite" }} />
+      </div>
+    );
+  }
+
+  const stats = [
+    { label: "Total de Leads", value: String(data?.totalLeads ?? 0), change: `${data?.newLeads ?? 0} novos`, icon: Target },
+    { label: "Agendamentos hoje", value: String(data?.todayAppointments ?? 0), change: "Hoje", icon: Calendar },
+    { label: "Score médio", value: String(data?.avgScore ?? 0), change: "Conversas ativas", icon: Star },
+    { label: "Conversas ativas", value: String(data?.activeConversations ?? 0), change: "Em andamento", icon: TrendingUp },
+  ];
+
   return (
     <div>
       <div style={{ marginBottom: "24px" }}>
-        <h2 style={{ color: "var(--gray-900)", fontSize: "22px", fontWeight: 800 }}>Bom dia, Dr. João</h2>
+        <h2 style={{ color: "var(--gray-900)", fontSize: "22px", fontWeight: 800 }}>Olá, {clientName} 👋</h2>
         <p style={{ color: "var(--gray-500)", fontSize: "14px", marginTop: "2px" }}>Resumo do seu atendimento hoje</p>
       </div>
 
@@ -54,59 +119,84 @@ export default function ClientDashboard() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-        {/* Appointments */}
         <div className="card" style={{ padding: "20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700 }}>Agendamentos de Hoje</h3>
-            <button className="btn-ghost" style={{ fontSize: "12px" }}>Ver calendário</button>
+            <button className="btn-ghost" style={{ fontSize: "12px" }} onClick={() => router.push("/client/calendar")}>Ver calendário</button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {todayAppointments.map((apt, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "var(--radius-sm)", background: "var(--gray-50)" }}>
-                <div style={{ minWidth: "48px" }}>
-                  <span style={{ color: "var(--green)", fontSize: "14px", fontWeight: 700 }}>{apt.time}</span>
+          {appointments.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray-400)", fontSize: "13px" }}>
+              Nenhum agendamento para hoje
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {appointments.map((apt) => (
+                <div key={apt.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "var(--radius-sm)", background: "var(--gray-50)" }}>
+                  <div style={{ minWidth: "48px" }}>
+                    <span style={{ color: "var(--green)", fontSize: "14px", fontWeight: 700 }}>{apt.start_time?.slice(0, 5)}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{apt.lead_name}</p>
+                    <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>{apt.service || "—"}</p>
+                  </div>
+                  <span className={`badge ${apt.status === "confirmed" ? "badge-green" : "badge-yellow"}`}>
+                    {apt.status === "confirmed" ? "Confirmado" : "Pendente"}
+                  </span>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{apt.name}</p>
-                  <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>{apt.service}</p>
-                </div>
-                <span className={`badge ${apt.status === "confirmed" ? "badge-green" : "badge-yellow"}`}>
-                  {apt.status === "confirmed" ? "Confirmado" : "Pendente"}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Recent Leads */}
         <div className="card" style={{ padding: "20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700 }}>Últimos Leads</h3>
-            <button className="btn-ghost" style={{ fontSize: "12px" }}>Ver todos</button>
+            <button className="btn-ghost" style={{ fontSize: "12px" }} onClick={() => router.push("/client/leads")}>Ver todos</button>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {recentLeads.map((lead, i) => (
-              <div key={i} style={{
-                display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px",
-                borderRadius: "var(--radius-sm)", cursor: "pointer", transition: "background 0.15s",
-              }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "var(--gray-50)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-              >
-                <div className="score-dot" style={{ background: scoreColor(lead.score) }}>{lead.score}</div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{lead.name}</p>
-                  <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>{lead.interest} · {lead.agent}</p>
+          {leads.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "var(--gray-400)", fontSize: "13px" }}>
+              Nenhum lead ainda. Seus agentes vão captar em breve!
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {leads.map((lead) => (
+                <div key={lead.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "var(--radius-sm)", cursor: "pointer", transition: "background 0.15s" }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--gray-50)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  onClick={() => router.push("/client/leads")}
+                >
+                  <div className="score-dot" style={{ background: scoreColor(lead.score) }}>{lead.score}</div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{lead.name}</p>
+                    <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>{lead.service || lead.stage}</p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--gray-400)" }}>
+                    <Clock size={12} />
+                    <span style={{ fontSize: "12px" }}>{timeAgo(lead.created_at)}</span>
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--gray-400)" }}>
-                  <Clock size={12} />
-                  <span style={{ fontSize: "12px" }}>{lead.time}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {data?.agents && data.agents.length > 0 && (
+        <div className="card" style={{ padding: "20px", marginTop: "16px" }}>
+          <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700, marginBottom: "14px" }}>Status dos Agentes</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "10px" }}>
+            {data.agents.map(agent => (
+              <div key={agent.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px", borderRadius: "var(--radius-sm)", background: "var(--gray-50)" }}>
+                <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: agent.status === "active" ? "var(--green)" : "var(--gray-300)" }} />
+                <div>
+                  <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{agent.name}</p>
+                  <p style={{ color: "var(--gray-400)", fontSize: "11px" }}>{agent.conversations_count} conversas</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

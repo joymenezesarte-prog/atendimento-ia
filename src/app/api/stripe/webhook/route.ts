@@ -1,107 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { createClient } from '@supabase/supabase-js'
-import Stripe from 'stripe'
 
-// Cliente Supabase com service role para operações no servidor
-const supabase = createClient(
+const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
 export async function POST(request: NextRequest) {
   const body = await request.text()
-  const signature = request.headers.get('stripe-signature')!
+  const sig = request.headers.get('stripe-signature')!
 
-  let event: Stripe.Event
-
+  let event
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    )
-  } catch (error) {
-    console.error('Webhook inválido:', error)
-    return NextResponse.json({ error: 'Webhook inválido' }, { status: 400 })
+    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: `Webhook error: ${msg}` }, { status: 400 })
   }
 
   try {
     switch (event.type) {
-
-      // Checkout concluído — implantação paga, trial iniciado
       case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.CheckoutSession
-        const { userId, planId } = session.metadata || {}
-
+        const session = event.data.object
+        const userId = session.metadata?.userId
+        const planId = session.metadata?.planId
         if (userId && planId) {
-          await supabase.from('subscriptions').upsert({
-            user_id: userId,
-            plan_id: planId,
-            stripe_customer_id: session.customer as string,
-            stripe_subscription_id: session.subscription as string,
-            status: 'trialing',
-            implantation_paid: true,
-            trial_start: new Date().toISOString(),
-            trial_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          })
+          await supabaseAdmin
+            .from('clients')
+            .update({
+              plan_id: planId,
+              status: 'active',
+              stripe_customer_id: session.customer as string,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId)
         }
         break
       }
-
-      // Assinatura ativada após trial (mês 2 em diante)
       case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription
-        const { userId, planId } = subscription.metadata || {}
-
-        if (userId) {
-          await supabase.from('subscriptions').update({
-            status: subscription.status,
-            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            plan_id: planId || undefined,
-          }).eq('stripe_subscription_id', subscription.id)
-        }
+        const sub = event.data.object
+        const customerId = sub.customer as string
+        const status = sub.status === 'active' ? 'active' : sub.status === 'trialing' ? 'trial' : 'inactive'
+        await supabaseAdmin
+          .from('clients')
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq('stripe_customer_id', customerId)
         break
       }
-
-      // Pagamento mensal realizado com sucesso
-      case 'invoice.payment_succeeded': {
-        const invoice = event.data.object as Stripe.Invoice
-        if (invoice.subscription) {
-          await supabase.from('subscriptions').update({
-            status: 'active',
-            last_payment_at: new Date().toISOString(),
-          }).eq('stripe_subscription_id', invoice.subscription as string)
-        }
-        break
-      }
-
-      // Pagamento falhou
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object as Stripe.Invoice
-        if (invoice.subscription) {
-          await supabase.from('subscriptions').update({
-            status: 'past_due',
-          }).eq('stripe_subscription_id', invoice.subscription as string)
-        }
-        break
-      }
-
-      // Assinatura cancelada
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription
-        await supabase.from('subscriptions').update({
-          status: 'canceled',
-          canceled_at: new Date().toISOString(),
-        }).eq('stripe_subscription_id', subscription.id)
+        const sub = event.data.object
+        const customerId = sub.customer as string
+        await supabaseAdmin
+          .from('clients')
+          .update({ status: 'inactive', updated_at: new Date().toISOString() })
+          .eq('stripe_customer_id', customerId)
+        break
+      }
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object
+        const customerId = invoice.customer as string
+        await supabaseAdmin
+          .from('clients')
+          .update({ status: 'inactive', updated_at: new Date().toISOString() })
+          .eq('stripe_customer_id', customerId)
         break
       }
     }
-
-    return NextResponse.json({ received: true })
-  } catch (error) {
-    console.error('Erro ao processar webhook:', error)
-    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+  } catch (err) {
+    console.error('Webhook handler error:', err)
   }
+
+  return NextResponse.json({ received: true })
 }
