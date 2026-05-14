@@ -1,0 +1,1089 @@
+{
+  "name": "Atendimento IA - Master Workflow v1",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "🔔 Chatwoot Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "path": "chatwoot",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "atendimento-ia-chatwoot"
+    },
+    {
+      "id": "n2",
+      "name": "✅ Só mensagens de contato",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "message_created",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.message_type }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "📦 Extrair Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst b = $input.first().json;\nconst att = (b.attachments || [])[0] || null;\n\nlet msgType = 'text';\nlet attUrl = null, attMime = 'text/plain';\nif (att) {\n  const ft = (att.file_type || '').toLowerCase();\n  attUrl = att.file_url || att.data_url || null;\n  if (ft === 'audio' || ft === 'voice') { msgType = 'audio'; attMime = 'audio/ogg'; }\n  else if (ft === 'image') { msgType = 'image'; attMime = 'image/jpeg'; }\n  else if (ft === 'document' || ft === 'file' || ft === 'sticker') {\n    msgType = 'document'; attMime = 'application/pdf';\n  }\n}\n\nreturn [{ json: {\n  inbox_id: String(b.inbox?.id || b.conversation?.inbox_id || ''),\n  chatwoot_conversation_id: b.conversation?.id,\n  message_id: b.id,\n  content: b.content || '',\n  sender_name: b.sender?.name || b.contact?.name || 'Cliente',\n  sender_phone: b.sender?.phone_number || b.contact?.phone_number || '',\n  contact_id: b.sender?.id || b.contact?.id || null,\n  msg_type: msgType,\n  att_url: attUrl,\n  att_mime: attMime,\n}}];\n"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "🤖 Buscar Agente (Supabase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        780,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/agents?chatwoot_inbox_id=eq.{{ $json.inbox_id }}&select=id,name,channel,phone_number,personality,instructions,features,client_id,clients(company_name,gemini_api_key)&limit=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Agente existe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n6",
+      "name": "🗂️ Montar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        240
+      ],
+      "parameters": {
+        "jsCode": "\nconst agent = $('🤖 Buscar Agente (Supabase)').first().json[0];\nconst msg   = $('📦 Extrair Dados').first().json;\nconst feat  = agent.features || {};\nreturn [{ json: {\n  agent_id: agent.id,\n  agent_name: agent.name,\n  agent_channel: agent.channel,\n  agent_personality: agent.personality || 'profissional e simpático',\n  agent_instructions: agent.instructions || '',\n  agent_features: feat,\n  gemini_key: (agent.clients && agent.clients.gemini_api_key) || '',\n  client_id: agent.client_id,\n  client_name: (agent.clients && agent.clients.company_name) || '',\n  inbox_id: msg.inbox_id,\n  chatwoot_conv_id: msg.chatwoot_conversation_id,\n  message_id: msg.message_id,\n  content: msg.content,\n  sender_name: msg.sender_name,\n  sender_phone: msg.sender_phone,\n  contact_id: msg.contact_id,\n  msg_type: msg.msg_type,\n  att_url: msg.att_url,\n  att_mime: msg.att_mime,\n}}];\n"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "🔀 Tipo de Mensagem",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1560,
+        240
+      ],
+      "parameters": {
+        "mode": "expression",
+        "output": "={{ $json.msg_type }}",
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "text",
+              "value": "text"
+            },
+            {
+              "outputKey": "audio",
+              "value": "audio"
+            },
+            {
+              "outputKey": "image",
+              "value": "image"
+            },
+            {
+              "outputKey": "document",
+              "value": "document"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "⬇️ Download Áudio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1820,
+        60
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.att_url }}",
+        "responseFormat": "file",
+        "options": {}
+      }
+    },
+    {
+      "id": "n9",
+      "name": "🎙️ Transcrever Áudio (Gemini)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2060,
+        60
+      ],
+      "parameters": {
+        "jsCode": "\nconst ctx = $('🗂️ Montar Contexto').first().json;\nconst binData = $input.first().binary?.data?.data || '';\nconst base64 = Buffer.from(binData, 'base64').toString('base64');\nconst apiKey = ctx.gemini_key || $env.GEMINI_API_KEY;\n\nconst res = await $http.request({\n  method: 'POST',\n  url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,\n  headers: {'Content-Type': 'application/json'},\n  body: JSON.stringify({\n    contents: [{parts: [\n      {inline_data: {mime_type: ctx.att_mime || 'audio/ogg', data: base64}},\n      {text: 'Transcreva exatamente o que foi dito neste áudio em português brasileiro. Retorne apenas a transcrição, sem comentários.'}\n    ]}],\n    generationConfig: {temperature: 0.1, maxOutputTokens: 512}\n  })\n});\nconst transcribed = res?.candidates?.[0]?.content?.parts?.[0]?.text || '[áudio não transcrito]';\nreturn [{ json: { ...ctx, content: transcribed, transcribed: true, media_base64: null }}];\n"
+      }
+    },
+    {
+      "id": "n10",
+      "name": "⬇️ Download Imagem",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1820,
+        240
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.att_url }}",
+        "responseFormat": "file",
+        "options": {}
+      }
+    },
+    {
+      "id": "n11",
+      "name": "🖼️ Preparar Imagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2060,
+        240
+      ],
+      "parameters": {
+        "jsCode": "\nconst ctx = $('🗂️ Montar Contexto').first().json;\nconst binData = $input.first().binary?.data?.data || '';\nconst base64 = Buffer.from(binData, 'base64').toString('base64');\nreturn [{ json: { ...ctx, media_base64: base64, media_type: 'image' }}];\n"
+      }
+    },
+    {
+      "id": "n12",
+      "name": "⬇️ Download Documento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1820,
+        420
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.att_url }}",
+        "responseFormat": "file",
+        "options": {}
+      }
+    },
+    {
+      "id": "n13",
+      "name": "📄 Preparar Documento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2060,
+        420
+      ],
+      "parameters": {
+        "jsCode": "\nconst ctx = $('🗂️ Montar Contexto').first().json;\nconst binData = $input.first().binary?.data?.data || '';\nconst base64 = Buffer.from(binData, 'base64').toString('base64');\nreturn [{ json: { ...ctx, media_base64: base64, media_type: 'document' }}];\n"
+      }
+    },
+    {
+      "id": "n14",
+      "name": "🔗 Unificar Branches",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2320,
+        240
+      ],
+      "parameters": {
+        "mode": "passThrough",
+        "output": "input1"
+      }
+    },
+    {
+      "id": "n15",
+      "name": "📜 Buscar Histórico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2580,
+        160
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?conversation_id=eq.{{ $json.chatwoot_conv_id }}&order=created_at.desc&limit=20&select=role,content",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n16",
+      "name": "👤 Salvar Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2580,
+        360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"client_id\":\"{{ $json.client_id }}\",\"agent_id\":\"{{ $json.agent_id }}\",\"name\":\"{{ $json.sender_name }}\",\"phone\":\"{{ $json.sender_phone }}\",\"channel\":\"{{ $json.agent_channel }}\",\"last_contact\":\"{{ new Date().toISOString() }}\"}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n17",
+      "name": "✍️ Construir Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2840,
+        240
+      ],
+      "parameters": {
+        "jsCode": "\nconst ctx = $('🔗 Unificar Branches').first().json;\nconst histRaw = $('📜 Buscar Histórico').first().json;\nconst history = Array.isArray(histRaw) ? histRaw.reverse() : [];\nconst feat = ctx.agent_features || {};\n\n// Histórico formatado\nconst histText = history.map(m => {\n  const role = m.role === 'assistant' ? `${ctx.agent_name}` : ctx.sender_name;\n  return `${role}: ${m.content}`;\n}).join('\\n') || '(início da conversa)';\n\n// System prompt\nconst systemPrompt = `Você é ${ctx.agent_name}, agente de atendimento via ${ctx.agent_channel}.\n\nPERSONALIDADE: ${ctx.agent_personality}\n\nINSTRUÇÕES:\n${ctx.agent_instructions}\n\nEMPRESA: ${ctx.client_name}\n\nREGRAS:\n- Responda SEMPRE em português brasileiro\n- Seja natural, como numa conversa real de WhatsApp\n- Mensagens curtas e diretas\n- Não mencione que é IA a menos que perguntado diretamente\n- Nunca quebre o personagem\n\nHISTÓRICO:\n${histText}`;\n\n// Partes do conteúdo para Gemini\nlet parts = [];\n\nif (ctx.media_base64 && ctx.media_type === 'image') {\n  parts.push({inline_data: {mime_type: ctx.att_mime || 'image/jpeg', data: ctx.media_base64}});\n  parts.push({text: ctx.content\n    ? `O cliente enviou esta imagem com a mensagem: \"${ctx.content}\". Analise a imagem e responda.`\n    : 'O cliente enviou esta imagem. Analise e responda adequadamente.'});\n} else if (ctx.media_base64 && ctx.media_type === 'document') {\n  parts.push({inline_data: {mime_type: ctx.att_mime || 'application/pdf', data: ctx.media_base64}});\n  parts.push({text: ctx.content\n    ? `O cliente enviou este documento com a mensagem: \"${ctx.content}\". Leia o documento e responda.`\n    : 'O cliente enviou este documento. Leia e responda.'});\n} else {\n  parts.push({text: `${ctx.sender_name}: ${ctx.content}`});\n}\n\n// Instruções internas de features\nlet internalNotes = '';\nif (feat.feat_qualify_lead) {\n  internalNotes += '\\n\\n[SISTEMA] Ao responder, avalie internamente o score deste lead de 0 a 10. No FINAL da sua resposta adicione exatamente: |||SCORE:N||| onde N é o número.';\n}\nif (feat.feat_urgency_detection) {\n  const urgWords = ['urgente','emergência','urgência','socorro','dor forte','sangue','acidente','agora mesmo'];\n  const isUrgent = urgWords.some(w => (ctx.content||'').toLowerCase().includes(w));\n  if (isUrgent) internalNotes += '\\n\\n[SISTEMA] URGÊNCIA DETECTADA — priorize e acolha o cliente imediatamente.';\n}\nif (feat.feat_send_cta) {\n  const ctaWords = ['preço','valor','quanto','comprar','contratar','plano','assinar'];\n  const wantsCTA = ctaWords.some(w => (ctx.content||'').toLowerCase().includes(w));\n  if (wantsCTA) internalNotes += '\\n\\n[SISTEMA] Cliente demonstrou interesse comercial. Inclua uma chamada para ação clara na resposta.';\n}\n\nconst finalSystem = systemPrompt + internalNotes;\n\n// Detecções de features\nconst schedWords = ['agendar','marcar','horário','consulta','reunião','quando','disponível','data'];\nconst humanWords = ['falar com pessoa','atendente humano','gerente','reclamação','falar com alguém'];\nconst urgWords2 = ['urgente','emergência','socorro','agora mesmo','dor forte'];\n\nreturn [{ json: {\n  ...ctx,\n  system_prompt: finalSystem,\n  gemini_parts: parts,\n  apiKey: ctx.gemini_key || '',\n  wants_scheduling: feat.feat_scheduling && schedWords.some(w => (ctx.content||'').toLowerCase().includes(w)),\n  wants_human: feat.feat_escalate_human && humanWords.some(w => (ctx.content||'').toLowerCase().includes(w)),\n  is_urgent: feat.feat_urgency_detection && urgWords2.some(w => (ctx.content||'').toLowerCase().includes(w)),\n}}];\n"
+      }
+    },
+    {
+      "id": "n18",
+      "name": "🧠 Chamar Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3100,
+        240
+      ],
+      "parameters": {
+        "jsCode": "\nconst ctx = $input.first().json;\nconst apiKey = ctx.apiKey;\nif (!apiKey) {\n  console.log(\"Sem chave Gemini para este cliente. Ignorando.\");\n  return [];\n}\n\nconst payload = {\n  system_instruction: {parts: [{text: ctx.system_prompt}]},\n  contents: [{parts: ctx.gemini_parts}],\n  generationConfig: {temperature: 0.75, maxOutputTokens: 1024, topP: 0.95},\n  safetySettings: [\n    {category:'HARM_CATEGORY_HARASSMENT',threshold:'BLOCK_NONE'},\n    {category:'HARM_CATEGORY_HATE_SPEECH',threshold:'BLOCK_NONE'},\n    {category:'HARM_CATEGORY_SEXUALLY_EXPLICIT',threshold:'BLOCK_MEDIUM_AND_ABOVE'},\n    {category:'HARM_CATEGORY_DANGEROUS_CONTENT',threshold:'BLOCK_NONE'}\n  ]\n};\n\nconst res = await $http.request({\n  method: 'POST',\n  url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,\n  headers: {'Content-Type': 'application/json'},\n  body: JSON.stringify(payload)\n});\n\nlet rawText = res?.candidates?.[0]?.content?.parts?.[0]?.text || 'Desculpe, não consegui processar. Pode repetir?';\n\n// Extrair score se presente\nlet leadScore = null;\nconst scoreMatch = rawText.match(/\\|\\|\\|SCORE:(\\d+)\\|\\|\\|/);\nif (scoreMatch) {\n  leadScore = parseInt(scoreMatch[1]);\n  rawText = rawText.replace(/\\|\\|\\|SCORE:\\d+\\|\\|\\|/, '').trim();\n}\n\nreturn [{ json: {\n  ...ctx,\n  response_text: rawText,\n  lead_score: leadScore,\n}}];\n"
+      }
+    },
+    {
+      "id": "n19",
+      "name": "💾 Salvar Msg Recebida",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3360,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"conversation_id\":\"{{ $json.chatwoot_conv_id }}\",\"role\":\"user\",\"content\":{{ JSON.stringify($json.content) }}}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n20",
+      "name": "💾 Salvar Resposta Agente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3360,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"conversation_id\":\"{{ $json.chatwoot_conv_id }}\",\"role\":\"assistant\",\"content\":{{ JSON.stringify($json.response_text) }}}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n21",
+      "name": "📤 Enviar via Chatwoot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3620,
+        220
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CHATWOOT_URL }}/api/v1/accounts/{{ $env.CHATWOOT_ACCOUNT_ID }}/conversations/{{ $json.chatwoot_conv_id }}/messages",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $env.CHATWOOT_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"content\":{{ JSON.stringify($json.response_text) }},\"message_type\":\"outgoing\",\"private\":false}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n22",
+      "name": "🚨 É urgente?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3880,
+        60
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.is_urgent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n23",
+      "name": "📣 Alerta Urgência",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4140,
+        -60
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CHATWOOT_URL }}/api/v1/accounts/{{ $env.CHATWOOT_ACCOUNT_ID }}/conversations/{{ $json.chatwoot_conv_id }}/messages",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $env.CHATWOOT_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"content\":\"🚨 URGÊNCIA DETECTADA!\\nCliente: {{ $json.sender_name }}\\nTelefone: {{ $json.sender_phone }}\\nMensagem: {{ $json.content }}\",\"message_type\":\"activity\",\"private\":true}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n24",
+      "name": "📅 Quer agendar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3880,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.wants_scheduling }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n25",
+      "name": "📆 Criar Evento Calendar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4140,
+        160
+      ],
+      "parameters": {
+        "jsCode": "\nconst ctx = $input.first().json;\n// Data padrão: amanhã às 10h\nconst tomorrow = new Date();\ntomorrow.setDate(tomorrow.getDate() + 1);\ntomorrow.setHours(10, 0, 0, 0);\nconst end = new Date(tomorrow.getTime() + 60 * 60 * 1000);\n\nconst toISO = d => d.toISOString().slice(0, 19) + '-03:00';\n\nconst event = {\n  summary: `Atendimento: ${ctx.sender_name}`,\n  description: `Lead: ${ctx.sender_name}\\nTelefone: ${ctx.sender_phone}\\nAgente IA: ${ctx.agent_name}\\nEmpresa: ${ctx.client_name}\\nMensagem original: ${ctx.content}`,\n  start: {dateTime: toISO(tomorrow), timeZone: 'America/Sao_Paulo'},\n  end: {dateTime: toISO(end), timeZone: 'America/Sao_Paulo'},\n  reminders: {useDefault: false, overrides: [\n    {method: 'popup', minutes: 60},\n    {method: 'popup', minutes: 1440}\n  ]}\n};\n\n// Precisa de OAuth2 configurado no n8n — use a credencial \"Google Calendar OAuth2\"\nconst calendarId = $env.GOOGLE_CALENDAR_ID || 'primary';\nconst res = await $http.request({\n  method: 'POST',\n  url: `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,\n  headers: {\n    'Authorization': `Bearer {{ $credentials.googleCalendarOAuth2Api.accessToken }}`,\n    'Content-Type': 'application/json'\n  },\n  body: JSON.stringify(event)\n});\n\nreturn [{ json: { ...ctx, calendar_event_id: res.id || null }}];\n"
+      }
+    },
+    {
+      "id": "n26",
+      "name": "🧑 Escalar para humano?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3880,
+        400
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.wants_human }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n27",
+      "name": "👥 Atribuir para Equipe",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4140,
+        360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CHATWOOT_URL }}/api/v1/accounts/{{ $env.CHATWOOT_ACCOUNT_ID }}/conversations/{{ $json.chatwoot_conv_id }}/assignments",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $env.CHATWOOT_API_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"team_id\":{{ $env.CHATWOOT_TEAM_ID || 1 }}}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n28",
+      "name": "📊 Score do Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3880,
+        580
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.lead_score !== null && $json.lead_score !== undefined }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.agent_features?.feat_qualify_lead }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "n29",
+      "name": "💯 Atualizar Score Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4140,
+        520
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?phone=eq.{{ $json.sender_phone }}&client_id=eq.{{ $json.client_id }}",
+        "sendBody": true,
+        "contentType": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "body": {
+          "specifyBody": "json",
+          "jsonBody": "={\"score\":{{ $json.lead_score }},\"last_contact\":\"{{ new Date().toISOString() }}\"}"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sn1",
+      "name": "📌 VARIÁVEIS OBRIGATÓRIAS",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        0
+      ],
+      "parameters": {
+        "content": "## ⚙️ Configure no n8n → Settings → Environment Variables\n\n**SUPABASE_URL** = https://xxx.supabase.co\n**SUPABASE_SERVICE_KEY** = sua service_role key\n**GEMINI_API_KEY** = key do Google AI Studio (fallback)\n**CHATWOOT_URL** = https://seu-chatwoot.com\n**CHATWOOT_ACCOUNT_ID** = ID da conta no Chatwoot\n**CHATWOOT_API_TOKEN** = token de acesso do usuário admin\n**CHATWOOT_TEAM_ID** = ID da equipe para escalação\n**GOOGLE_CALENDAR_ID** = email do calendário (ou 'primary')\n\n## 🔗 Webhook URL\nCopie a URL deste webhook e cole em:\nChatwoot → Settings → Integrations → Webhooks\n\nMarque: ✅ Message Created",
+        "height": 320,
+        "width": 400,
+        "color": 7
+      }
+    },
+    {
+      "id": "sn2",
+      "name": "📌 FLUXO PRINCIPAL",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "content": "## 🔄 Fluxo\n1. Webhook recebe evento do Chatwoot\n2. Filtra só mensagens de contato (type=0)\n3. Busca agente por inbox_id\n4. Processa tipo: texto/áudio/imagem/documento\n5. Busca histórico da conversa\n6. Chama Gemini com prompt completo\n7. Salva no Supabase\n8. Envia resposta pelo Chatwoot\n9. Executa features ativas",
+        "height": 200,
+        "width": 300,
+        "color": 4
+      }
+    }
+  ],
+  "connections": {
+    "🔔 Chatwoot Webhook": {
+      "main": [
+        [
+          {
+            "node": "✅ Só mensagens de contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "✅ Só mensagens de contato": {
+      "main": [
+        [
+          {
+            "node": "📦 Extrair Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📦 Extrair Dados": {
+      "main": [
+        [
+          {
+            "node": "🤖 Buscar Agente (Supabase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Buscar Agente (Supabase)": {
+      "main": [
+        [
+          {
+            "node": "Agente existe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente existe?": {
+      "main": [
+        [
+          {
+            "node": "🗂️ Montar Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🗂️ Montar Contexto": {
+      "main": [
+        [
+          {
+            "node": "🔀 Tipo de Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔀 Tipo de Mensagem": {
+      "main": [
+        [
+          {
+            "node": "🔗 Unificar Branches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⬇️ Download Áudio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⬇️ Download Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "⬇️ Download Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⬇️ Download Áudio": {
+      "main": [
+        [
+          {
+            "node": "🎙️ Transcrever Áudio (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⬇️ Download Imagem": {
+      "main": [
+        [
+          {
+            "node": "🖼️ Preparar Imagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⬇️ Download Documento": {
+      "main": [
+        [
+          {
+            "node": "📄 Preparar Documento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🎙️ Transcrever Áudio (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "🔗 Unificar Branches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "🖼️ Preparar Imagem": {
+      "main": [
+        [
+          {
+            "node": "🔗 Unificar Branches",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "📄 Preparar Documento": {
+      "main": [
+        [
+          {
+            "node": "🔗 Unificar Branches",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "🔗 Unificar Branches": {
+      "main": [
+        [
+          {
+            "node": "📜 Buscar Histórico",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "👤 Salvar Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📜 Buscar Histórico": {
+      "main": [
+        [
+          {
+            "node": "✍️ Construir Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "👤 Salvar Lead": {
+      "main": [
+        [
+          {
+            "node": "✍️ Construir Prompt",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "✍️ Construir Prompt": {
+      "main": [
+        [
+          {
+            "node": "🧠 Chamar Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 Chamar Gemini": {
+      "main": [
+        [
+          {
+            "node": "💾 Salvar Msg Recebida",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "💾 Salvar Resposta Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾 Salvar Msg Recebida": {
+      "main": [
+        [
+          {
+            "node": "📤 Enviar via Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾 Salvar Resposta Agente": {
+      "main": [
+        [
+          {
+            "node": "📤 Enviar via Chatwoot",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "📤 Enviar via Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "🚨 É urgente?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📅 Quer agendar?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🧑 Escalar para humano?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📊 Score do Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚨 É urgente?": {
+      "main": [
+        [
+          {
+            "node": "📣 Alerta Urgência",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📅 Quer agendar?": {
+      "main": [
+        [
+          {
+            "node": "📆 Criar Evento Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧑 Escalar para humano?": {
+      "main": [
+        [
+          {
+            "node": "👥 Atribuir para Equipe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Score do Lead?": {
+      "main": [
+        [
+          {
+            "node": "💯 Atualizar Score Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [
+    {
+      "name": "atendimento-ia"
+    }
+  ]
+}

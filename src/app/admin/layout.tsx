@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import MouseGlow from "@/components/MouseGlow";
+import { createClient } from "@/lib/supabase";
 import {
   LayoutDashboard, Users, Bot, MessageSquare, Target,
   BarChart3, CreditCard, Settings, ChevronLeft, ChevronRight,
@@ -11,13 +12,13 @@ import {
 
 const menuItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/admin" },
-  { id: "clients", label: "Clientes", icon: Users, path: "/admin/clients" },
-  { id: "agents", label: "Agentes", icon: Bot, path: "/admin/agents" },
+  { id: "clients",   label: "Clientes",  icon: Users,           path: "/admin/clients" },
+  { id: "agents",    label: "Agentes",   icon: Bot,             path: "/admin/agents" },
   { id: "conversations", label: "Conversas", icon: MessageSquare, path: "/admin/conversations" },
-  { id: "leads", label: "Leads CRM", icon: Target, path: "/admin/leads" },
-  { id: "reports", label: "Relatórios", icon: BarChart3, path: "/admin/reports" },
-  { id: "billing", label: "Financeiro", icon: CreditCard, path: "/admin/billing" },
-  { id: "settings", label: "Configurações", icon: Settings, path: "/admin/settings" },
+  { id: "leads",     label: "Leads CRM", icon: Target,          path: "/admin/leads" },
+  { id: "reports",   label: "Relatórios",icon: BarChart3,       path: "/admin/reports" },
+  { id: "billing",   label: "Financeiro",icon: CreditCard,      path: "/admin/billing" },
+  { id: "settings",  label: "Config.",   icon: Settings,        path: "/admin/settings" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -25,13 +26,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
-  const isActive = (path: string) => path === "/admin" ? pathname === "/admin" : pathname.startsWith(path);
+  const isActive = (path: string) =>
+    path === "/admin" ? pathname === "/admin" : pathname.startsWith(path);
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--gray-50)" }}>
+      <MouseGlow />
+
       {/* Sidebar */}
       <aside style={{
-        width: collapsed ? "68px" : "240px",
+        width: collapsed ? "68px" : "220px",
         background: "var(--white)",
         borderRight: "1px solid var(--gray-200)",
         display: "flex",
@@ -43,122 +53,98 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         overflow: "hidden",
       }}>
         {/* Logo */}
-        <div style={{
-          padding: collapsed ? "20px 14px" : "20px 20px",
-          borderBottom: "1px solid var(--gray-100)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: collapsed ? "center" : "space-between",
-          minHeight: "64px",
-        }}>
-          {!collapsed ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "17px", fontWeight: 800, color: "var(--gray-900)", letterSpacing: "-0.3px" }}>
-                Atendimento
-              </span>
-              <span style={{
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                background: "var(--green)", color: "white", fontSize: "9px", fontWeight: 800,
-                width: "22px", height: "22px", borderRadius: "50% 50% 50% 4px",
-              }}>IA</span>
+        <div style={{ padding: collapsed ? "20px 0" : "20px 16px", borderBottom: "1px solid var(--gray-100)", display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ width: "32px", height: "32px", borderRadius: "var(--radius-sm)", background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, margin: collapsed ? "0 auto" : undefined }}>
+            <Bot size={18} color="white" />
+          </div>
+          {!collapsed && (
+            <div>
+              <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 800, lineHeight: 1 }}>Atendimento IA</p>
+              <p style={{ color: "var(--green)", fontSize: "10px", fontWeight: 600, marginTop: "2px" }}>Admin</p>
             </div>
-          ) : (
-            <span style={{
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              background: "var(--green)", color: "white", fontSize: "10px", fontWeight: 800,
-              width: "28px", height: "28px", borderRadius: "50% 50% 50% 5px",
-            }}>IA</span>
           )}
-          <button onClick={() => setCollapsed(!collapsed)} className="btn-ghost"
-            style={{ padding: "4px", display: collapsed ? "none" : "flex" }}>
-            <ChevronLeft size={16} />
-          </button>
         </div>
 
         {/* Menu */}
-        <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: "2px" }}>
-          {menuItems.map((item) => {
+        <nav style={{ flex: 1, padding: "12px 8px", overflow: "hidden" }}>
+          {menuItems.map(item => {
             const Icon = item.icon;
             const active = isActive(item.path);
             return (
-              <button key={item.id} id={`nav-${item.id}`} onClick={() => router.push(item.path)}
+              <button
+                key={item.id}
+                onClick={() => router.push(item.path)}
                 style={{
-                  display: "flex", alignItems: "center", gap: "10px",
-                  padding: collapsed ? "10px" : "10px 12px",
-                  borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: collapsed ? "10px 0" : "10px 12px",
                   justifyContent: collapsed ? "center" : "flex-start",
+                  borderRadius: "var(--radius-sm)",
                   background: active ? "var(--green-50)" : "transparent",
-                  color: active ? "var(--green-dim)" : "var(--gray-500)",
-                  fontSize: "13px", fontWeight: active ? 600 : 500,
-                  fontFamily: "'Inter', sans-serif",
-                  transition: "all 0.15s ease",
+                  color: active ? "var(--green)" : "var(--gray-500)",
+                  fontWeight: active ? 700 : 500,
+                  fontSize: "13px",
+                  marginBottom: "2px",
+                  transition: "all 0.15s",
+                  border: "none",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
                 }}
-                onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--gray-50)"; e.currentTarget.style.color = "var(--gray-700)"; } }}
-                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--gray-500)"; } }}
               >
-                <Icon size={18} />
-                {!collapsed && <span>{item.label}</span>}
+                <Icon size={16} style={{ flexShrink: 0 }} />
+                {!collapsed && item.label}
               </button>
             );
           })}
         </nav>
 
-        {collapsed && (
-          <div style={{ padding: "8px", borderTop: "1px solid var(--gray-100)" }}>
-            <button onClick={() => setCollapsed(false)} className="btn-ghost" style={{ width: "100%", justifyContent: "center", padding: "8px" }}>
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
-
-        {/* User */}
-        <div style={{
-          padding: collapsed ? "12px 8px" : "12px 16px",
-          borderTop: "1px solid var(--gray-100)",
-          display: "flex", alignItems: "center", gap: "10px",
-          justifyContent: collapsed ? "center" : "flex-start",
-        }}>
-          <div style={{
-            width: "32px", height: "32px", borderRadius: "var(--radius-sm)",
-            background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center",
-            color: "white", fontWeight: 700, fontSize: "13px", flexShrink: 0,
-          }}>A</div>
-          {!collapsed && (
-            <>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>Admin</div>
-                <div style={{ color: "var(--gray-400)", fontSize: "11px" }}>Super Admin</div>
-              </div>
-              <button onClick={() => router.push("/")} className="btn-ghost" style={{ padding: "4px" }}>
-                <LogOut size={16} />
-              </button>
-            </>
-          )}
+        {/* Footer */}
+        <div style={{ padding: "12px 8px", borderTop: "1px solid var(--gray-100)" }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              width: "100%", display: "flex", alignItems: "center",
+              gap: "10px", padding: collapsed ? "10px 0" : "10px 12px",
+              justifyContent: collapsed ? "center" : "flex-start",
+              borderRadius: "var(--radius-sm)", background: "transparent",
+              color: "var(--gray-400)", fontSize: "13px", fontWeight: 500,
+              border: "none", cursor: "pointer",
+            }}
+          >
+            <LogOut size={16} style={{ flexShrink: 0 }} />
+            {!collapsed && "Sair"}
+          </button>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            style={{
+              width: "100%", display: "flex", alignItems: "center",
+              gap: "10px", padding: collapsed ? "10px 0" : "10px 12px",
+              justifyContent: collapsed ? "center" : "flex-start",
+              borderRadius: "var(--radius-sm)", background: "transparent",
+              color: "var(--gray-400)", fontSize: "13px", fontWeight: 500,
+              border: "none", cursor: "pointer", marginTop: "4px",
+            }}
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {!collapsed && "Recolher"}
+          </button>
         </div>
       </aside>
 
-      <MouseGlow />
-
       {/* Main */}
-      <main style={{ flex: 1, marginLeft: collapsed ? "68px" : "240px", transition: "margin-left 0.2s ease", position: "relative", zIndex: 1 }}>
-        <header style={{
-          height: "64px", borderBottom: "1px solid var(--gray-100)",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 28px", background: "var(--white)", position: "sticky", top: 0, zIndex: 40,
-        }}>
-          <h1 style={{ color: "var(--gray-900)", fontSize: "16px", fontWeight: 700 }}>
-            {menuItems.find(i => isActive(i.path))?.label || "Dashboard"}
-          </h1>
-          <button className="btn-ghost" style={{ position: "relative" }}>
-            <Bell size={18} />
-            <span style={{
-              position: "absolute", top: "-2px", right: "-2px",
-              width: "8px", height: "8px", borderRadius: "50%",
-              background: "var(--green)", border: "2px solid var(--white)",
-            }} />
+      <main style={{ marginLeft: collapsed ? "68px" : "220px", flex: 1, padding: "32px", transition: "margin-left 0.2s ease" }}>
+        {/* Topbar */}
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: "28px", gap: "12px" }}>
+          <button style={{ width: "36px", height: "36px", borderRadius: "50%", border: "1px solid var(--gray-200)", background: "var(--white)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--gray-500)" }}>
+            <Bell size={16} />
           </button>
-        </header>
-        <div style={{ padding: "28px" }}>{children}</div>
+          <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: "14px", fontWeight: 800 }}>
+            A
+          </div>
+        </div>
+        {children}
       </main>
     </div>
   );

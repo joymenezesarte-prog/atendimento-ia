@@ -9,13 +9,9 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
+        getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -26,28 +22,35 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
+  const { pathname } = request.nextUrl
 
-  // Rotas protegidas — redireciona para login se não autenticado
-  const protectedRoutes = ['/dashboard', '/agentes', '/configuracoes']
-  const isProtected = protectedRoutes.some(route =>
-    request.nextUrl.pathname.startsWith(route)
-  )
-
-  if (isProtected && !user) {
+  // Rotas do cliente — requer autenticação
+  if (pathname.startsWith('/client') && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Se já está logado e tenta acessar login/cadastro, redireciona para dashboard
-  const authRoutes = ['/login', '/cadastro']
-  const isAuthRoute = authRoutes.some(route =>
-    request.nextUrl.pathname.startsWith(route)
-  )
+  // Rotas admin — requer autenticação + email de admin
+  if (pathname.startsWith('/admin')) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+    const adminEmail = process.env.ADMIN_EMAIL || 'joyomoda@gmail.com'
+    if (user.email !== adminEmail) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/client'
+      return NextResponse.redirect(url)
+    }
+  }
 
-  if (isAuthRoute && user) {
+  // Já logado acessando login/cadastro → redireciona
+  if ((pathname === '/login' || pathname === '/cadastro') && user) {
+    const adminEmail = process.env.ADMIN_EMAIL || 'joyomoda@gmail.com'
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = user.email === adminEmail ? '/admin' : '/client'
     return NextResponse.redirect(url)
   }
 

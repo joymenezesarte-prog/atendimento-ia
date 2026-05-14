@@ -1,29 +1,109 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Plus, Pencil, Bot, Key, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Search, Plus, Pencil, Bot, Key, X, Check, Smartphone, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 
-const plans = [
-  { id: "atendimento", name: "Atendimento IA", implantation: 500, monthly: 249 },
-  { id: "vendas", name: "Vendas IA", implantation: 700, monthly: 499 },
-  { id: "operacao", name: "Operação IA", implantation: 2000, monthly: 889 },
+const PLANS = [
+  { id: "atendimento", name: "Atendimento IA", monthly: 249 },
+  { id: "vendas",      name: "Vendas IA",      monthly: 499 },
+  { id: "operacao",    name: "Operação IA",    monthly: 889 },
 ];
+const PLAN_MAP: Record<string, string> = { atendimento: "Atendimento IA", vendas: "Vendas IA", operacao: "Operação IA" };
 
-const initialClients = [
-  { id: "1", name: "Clínica Sorriso", email: "contato@clinicasorriso.com", plan: "vendas", agents: 2, leads: 45, paymentStatus: "paid", geminiKey: "AIza...xxx", createdAt: "15/03/2026" },
-  { id: "2", name: "Loja da Maria", email: "maria@lojadamaria.com", plan: "atendimento", agents: 1, leads: 23, paymentStatus: "paid", geminiKey: "AIza...yyy", createdAt: "01/04/2026" },
-  { id: "3", name: "Restaurante Sabor", email: "sabor@restaurante.com", plan: "atendimento", agents: 1, leads: 67, paymentStatus: "paid", geminiKey: "AIza...zzz", createdAt: "10/04/2026" },
-  { id: "4", name: "Escritório Silva", email: "silva@advocacia.com", plan: "operacao", agents: 3, leads: 31, paymentStatus: "pending", geminiKey: "", createdAt: "20/04/2026" },
-];
+interface Client {
+  id: string; company_name: string; contact_name: string | null;
+  email: string | null; phone: string | null; plan_id: string | null;
+  status: string; gemini_api_key: string | null;
+  agent_count: number; lead_count: number; created_at: string;
+}
+
+const emptyForm = { name: "", contactName: "", email: "", phone: "", plan: "atendimento", geminiKey: "", whatsappNumber: "", metaPhoneNumberId: "", agentName: "" };
 
 export default function ClientsPage() {
-  const [clients] = useState(initialClients);
+  const router = useRouter();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [newClient, setNewClient] = useState({ name: "", email: "", phone: "", plan: "atendimento", geminiKey: "" });
+  const [editClient, setEditClient] = useState<Client | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [showWhatsApp, setShowWhatsApp] = useState(true);
+  const [setupResult, setSetupResult] = useState<{ message: string; status: string } | null>(null);
+  const [form, setForm] = useState(emptyForm);
 
-  const filtered = clients.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.email.toLowerCase().includes(searchQuery.toLowerCase()));
-  const getPlan = (id: string) => plans.find(p => p.id === id);
+  const f = (key: keyof typeof emptyForm, val: string) => setForm(p => ({ ...p, [key]: val }));
+
+  async function load() {
+    try {
+      const res = await fetch("/api/admin/clients");
+      if (res.status === 401) { router.push("/login"); return; }
+      const data = await res.json();
+      setClients(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Erro ao carregar clientes:", e);
+      setClients([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = clients.filter(c =>
+    c.company_name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.email ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  function openCreate() {
+    setEditClient(null); setForm(emptyForm); setSetupResult(null); setShowWhatsApp(true); setShowModal(true);
+  }
+  function openEdit(c: Client) {
+    setEditClient(c);
+    setForm({ ...emptyForm, name: c.company_name, contactName: c.contact_name ?? "", email: c.email ?? "", phone: c.phone ?? "", plan: c.plan_id ?? "atendimento", geminiKey: c.gemini_api_key ?? "" });
+    setSetupResult(null); setShowWhatsApp(false); setShowModal(true);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setSetupResult(null);
+
+    if (editClient) {
+      await fetch(`/api/admin/clients/${editClient.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_name: form.name, contact_name: form.contactName || null, email: form.email, phone: form.phone, plan_id: form.plan, gemini_api_key: form.geminiKey || null }),
+      });
+      setSaving(false); setShowModal(false); load();
+    } else {
+      // Setup completo: cliente + Chatwoot inbox + agente
+      const res = await fetch("/api/admin/clients/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_name: form.name,
+          contact_name: form.contactName || null,
+          email: form.email,
+          phone: form.phone || null,
+          plan_id: form.plan,
+          gemini_api_key: form.geminiKey || null,
+          whatsapp_number: form.whatsappNumber || null,
+          meta_phone_number_id: form.metaPhoneNumberId || null,
+          agent_name: form.agentName || null,
+        }),
+      });
+      const data = await res.json();
+      setSaving(false);
+      if (!res.ok) {
+        setSetupResult({ message: data.error || "Erro ao criar cliente", status: "erro" });
+      } else {
+        setSetupResult({ message: data.message, status: data.status });
+        load();
+      }
+    }
+  }
+
+  if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}><div className="spinner" /></div>;
 
   return (
     <div>
@@ -32,111 +112,175 @@ export default function ClientsPage() {
           <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800 }}>Clientes</h2>
           <p style={{ color: "var(--gray-500)", fontSize: "13px", marginTop: "2px" }}>{clients.length} cadastrados</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowModal(true)}><Plus size={16} /> Novo Cliente</button>
+        <button className="btn-primary" onClick={openCreate}><Plus size={16} /> Novo Cliente</button>
       </div>
 
       <div style={{ marginBottom: "20px", position: "relative", maxWidth: "320px" }}>
         <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--gray-400)" }} />
-        <input className="input" placeholder="Buscar por nome ou email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ paddingLeft: "36px" }} />
+        <input className="input" placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: "36px" }} />
       </div>
 
       <div className="card" style={{ overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--gray-100)" }}>
-              {["Cliente", "Plano", "Agentes", "Leads", "Pagamento", "API Key", "Ações"].map(h => (
+              {["Empresa", "Plano", "Agentes", "Leads", "Status", "Gemini Key", ""].map(h => (
                 <th key={h} style={{ padding: "12px 16px", textAlign: "left", color: "var(--gray-500)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map(client => {
-              const plan = getPlan(client.plan);
-              return (
-                <tr key={client.id} style={{ borderBottom: "1px solid var(--gray-50)", transition: "background 0.15s", cursor: "pointer" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--gray-50)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                  <td style={{ padding: "14px 16px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: "36px", height: "36px", borderRadius: "var(--radius-sm)", background: "var(--green-50)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--green)", fontWeight: 700, fontSize: "14px" }}>
-                        {client.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 600 }}>{client.name}</p>
-                        <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>{client.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: "14px 16px" }}>
-                    <span className="badge badge-green">{plan?.name}</span>
-                    <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>R$ {plan?.monthly}/mês</p>
-                  </td>
-                  <td style={{ padding: "14px 16px", color: "var(--gray-900)", fontSize: "14px", fontWeight: 700 }}>{client.agents}</td>
-                  <td style={{ padding: "14px 16px", color: "var(--gray-900)", fontSize: "14px", fontWeight: 700 }}>{client.leads}</td>
-                  <td style={{ padding: "14px 16px" }}>
-                    <span className={`badge ${client.paymentStatus === "paid" ? "badge-green" : "badge-yellow"}`}>
-                      {client.paymentStatus === "paid" ? "Pago" : "Pendente"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "14px 16px" }}>
-                    <span className={`badge ${client.geminiKey ? "badge-green" : "badge-red"}`}>
-                      {client.geminiKey ? "Configurada" : "Faltando"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "14px 16px" }}>
-                    <div style={{ display: "flex", gap: "4px" }}>
-                      <button className="btn-ghost" style={{ padding: "6px" }}><Pencil size={14} /></button>
-                      <button className="btn-ghost" style={{ padding: "6px" }}><Bot size={14} /></button>
-                      <button className="btn-ghost" style={{ padding: "6px" }}><Key size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {filtered.length === 0 ? (
+              <tr><td colSpan={7} style={{ padding: "40px", textAlign: "center", color: "var(--gray-400)", fontSize: "13px" }}>Nenhum cliente encontrado</td></tr>
+            ) : filtered.map(client => (
+              <tr key={client.id} style={{ borderBottom: "1px solid var(--gray-50)" }}>
+                <td style={{ padding: "14px 16px" }}>
+                  <p style={{ color: "var(--gray-900)", fontSize: "13px", fontWeight: 700 }}>{client.company_name}</p>
+                  <p style={{ color: "var(--gray-400)", fontSize: "11px" }}>{client.email}</p>
+                </td>
+                <td style={{ padding: "14px 16px" }}><span className="badge badge-green">{PLAN_MAP[client.plan_id ?? ""] ?? "—"}</span></td>
+                <td style={{ padding: "14px 16px", color: "var(--gray-700)", fontSize: "13px", textAlign: "center" }}>{client.agent_count}</td>
+                <td style={{ padding: "14px 16px", color: "var(--gray-700)", fontSize: "13px", textAlign: "center" }}>{client.lead_count}</td>
+                <td style={{ padding: "14px 16px" }}>
+                  <span className={`badge ${client.status === "active" ? "badge-green" : client.status === "trial" ? "badge-yellow" : "badge-red"}`}>
+                    {client.status === "active" ? "Ativo" : client.status === "trial" ? "Trial" : "Inativo"}
+                  </span>
+                </td>
+                <td style={{ padding: "14px 16px" }}>
+                  {client.gemini_api_key
+                    ? <span style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--green)", fontSize: "12px" }}><Check size={12} /> Configurada</span>
+                    : <span style={{ color: "var(--gray-400)", fontSize: "12px" }}>—</span>}
+                </td>
+                <td style={{ padding: "14px 16px" }}>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button className="btn-ghost" style={{ padding: "6px" }} onClick={() => openEdit(client)} title="Editar"><Pencil size={14} /></button>
+                    <button className="btn-ghost" style={{ padding: "6px" }} onClick={() => router.push("/admin/agents")} title="Agentes"><Bot size={14} /></button>
+                    <button className="btn-ghost" style={{ padding: "6px" }} title="API Key"><Key size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
       {/* Modal */}
       {showModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" }}
-          onClick={() => setShowModal(false)}>
-          <div className="card animate-fade-up" style={{ width: "100%", maxWidth: "480px", padding: "28px" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-              <h3 style={{ color: "var(--gray-900)", fontSize: "18px", fontWeight: 700 }}>Novo Cliente</h3>
-              <button className="btn-ghost" onClick={() => setShowModal(false)} style={{ padding: "4px" }}><X size={18} /></button>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "13px", fontWeight: 500, marginBottom: "6px" }}>Nome da Empresa</label>
-                <input className="input" placeholder="Ex: Clínica Sorriso" value={newClient.name} onChange={(e) => setNewClient({ ...newClient, name: e.target.value })} />
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+          <div className="card" style={{ width: "520px", padding: "28px", position: "relative", maxHeight: "92vh", overflowY: "auto" }}>
+            <button onClick={() => setShowModal(false)} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: "var(--gray-400)" }}><X size={18} /></button>
+            <h3 style={{ color: "var(--gray-900)", fontSize: "16px", fontWeight: 800, marginBottom: "4px" }}>
+              {editClient ? "Editar Cliente" : "Novo Cliente"}
+            </h3>
+            {!editClient && (
+              <p style={{ color: "var(--gray-400)", fontSize: "12px", marginBottom: "20px" }}>
+                Preencha os dados e o WhatsApp para configurar tudo automaticamente.
+              </p>
+            )}
+
+            {/* Resultado do setup */}
+            {setupResult && (
+              <div style={{
+                padding: "12px 14px", borderRadius: "var(--radius-sm)", marginBottom: "16px",
+                background: setupResult.status === "completo" ? "var(--green-50)" : setupResult.status === "erro" ? "rgba(239,68,68,0.06)" : "rgba(234,179,8,0.08)",
+                border: `1px solid ${setupResult.status === "completo" ? "rgba(34,197,94,0.25)" : setupResult.status === "erro" ? "rgba(239,68,68,0.2)" : "rgba(234,179,8,0.25)"}`,
+                display: "flex", gap: "8px", alignItems: "flex-start",
+              }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: "2px", color: setupResult.status === "completo" ? "var(--green)" : setupResult.status === "erro" ? "var(--danger)" : "#ca8a04" }} />
+                <p style={{ fontSize: "12px", color: "var(--gray-700)", lineHeight: 1.5 }}>{setupResult.message}</p>
               </div>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "13px", fontWeight: 500, marginBottom: "6px" }}>Email</label>
-                <input className="input" type="email" placeholder="contato@empresa.com" value={newClient.email} onChange={(e) => setNewClient({ ...newClient, email: e.target.value })} />
-              </div>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "13px", fontWeight: 500, marginBottom: "6px" }}>Plano</label>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  {plans.map(plan => (
-                    <button key={plan.id} onClick={() => setNewClient({ ...newClient, plan: plan.id })}
-                      style={{
-                        flex: 1, padding: "12px 8px", borderRadius: "var(--radius-sm)", textAlign: "center", fontFamily: "'Inter', sans-serif",
-                        cursor: "pointer", transition: "all 0.15s",
-                        border: newClient.plan === plan.id ? "2px solid var(--green)" : "1px solid var(--gray-200)",
-                        background: newClient.plan === plan.id ? "var(--green-50)" : "var(--white)",
-                      }}>
-                      <p style={{ color: "var(--gray-900)", fontSize: "12px", fontWeight: 600 }}>{plan.name}</p>
-                      <p style={{ color: "var(--green)", fontSize: "16px", fontWeight: 700, marginTop: "4px" }}>R$ {plan.monthly}</p>
-                      <p style={{ color: "var(--gray-400)", fontSize: "10px" }}>/mês</p>
-                    </button>
-                  ))}
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "13px" }}>
+
+              {/* Dados da empresa */}
+              <div style={{ paddingBottom: "4px", borderBottom: "1px solid var(--gray-100)" }}>
+                <p style={{ color: "var(--gray-500)", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "12px" }}>Dados da Empresa</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div>
+                    <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Nome da Empresa *</label>
+                    <input className="input" value={form.name} onChange={e => f("name", e.target.value)} placeholder="Ex: Clínica Sorriso" />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Nome do Contato</label>
+                      <input className="input" value={form.contactName} onChange={e => f("contactName", e.target.value)} placeholder="Ex: João Silva" />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Telefone</label>
+                      <input className="input" value={form.phone} onChange={e => f("phone", e.target.value)} placeholder="(11) 99999-9999" />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Email *</label>
+                    <input className="input" type="email" value={form.email} onChange={e => f("email", e.target.value)} placeholder="contato@empresa.com" disabled={!!editClient} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div>
+                      <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Plano</label>
+                      <select className="input" value={form.plan} onChange={e => f("plan", e.target.value)}>
+                        {PLANS.map(p => <option key={p.id} value={p.id}>{p.name} — R$ {p.monthly}/mês</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Gemini API Key</label>
+                      <input className="input" value={form.geminiKey} onChange={e => f("geminiKey", e.target.value)} placeholder="AIzaSy..." style={{ fontFamily: "monospace", fontSize: "11px" }} />
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* Setup WhatsApp (só no cadastro) */}
+              {!editClient && (
+                <div>
+                  <button
+                    onClick={() => setShowWhatsApp(s => !s)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: showWhatsApp ? "12px" : 0 }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Smartphone size={14} style={{ color: "var(--green)" }} />
+                      <p style={{ color: "var(--gray-700)", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        Configurar WhatsApp Automaticamente
+                      </p>
+                    </div>
+                    {showWhatsApp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+
+                  {showWhatsApp && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "14px", background: "var(--green-50)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(34,197,94,0.2)" }}>
+                      <p style={{ color: "var(--gray-600)", fontSize: "12px", lineHeight: 1.5 }}>
+                        Preencha os campos abaixo para criar a inbox no Chatwoot e o agente automaticamente. O <strong>Phone Number ID</strong> você obtém no Meta Business Manager após adicionar o número.
+                      </p>
+                      <div>
+                        <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Número WhatsApp (com DDI)</label>
+                        <input className="input" value={form.whatsappNumber} onChange={e => f("whatsappNumber", e.target.value)} placeholder="+5511999999999" />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>
+                          Phone Number ID
+                          <span style={{ color: "var(--gray-400)", fontWeight: 400, marginLeft: "6px" }}>Meta Business Manager → WhatsApp → Números de telefone</span>
+                        </label>
+                        <input className="input" value={form.metaPhoneNumberId} onChange={e => f("metaPhoneNumberId", e.target.value)} placeholder="Ex: 123456789012345" style={{ fontFamily: "monospace" }} />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Nome do Agente IA</label>
+                        <input className="input" value={form.agentName} onChange={e => f("agentName", e.target.value)} placeholder="Ex: Sofia" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div style={{ display: "flex", gap: "10px", marginTop: "24px", justifyContent: "flex-end" }}>
-              <button className="btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn-primary">Criar Cliente</button>
+
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button className="btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
+              {!setupResult || setupResult.status === "erro" ? (
+                <button className="btn-primary" onClick={handleSave} disabled={saving || !form.name || !form.email}>
+                  {saving ? "Configurando..." : editClient ? "Salvar" : "Criar e Configurar"}
+                </button>
+              ) : (
+                <button className="btn-primary" onClick={() => setShowModal(false)}>Fechar</button>
+              )}
             </div>
           </div>
         </div>
