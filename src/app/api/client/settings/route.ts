@@ -8,16 +8,16 @@ export async function GET() {
   const db = getSupabaseAdmin()
   const { data, error } = await db
     .from('clients')
-    .select('mp_access_token, stripe_secret_key')
+    .select('mp_access_token, stripe_secret_key, stripe_webhook_secret')
     .eq('id', client.id)
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Retorna os tokens mascarados (só indica se existe, não o valor completo)
   return NextResponse.json({
     mp_access_token: data?.mp_access_token ?? null,
     stripe_secret_key: data?.stripe_secret_key ?? null,
+    stripe_webhook_secret: data?.stripe_webhook_secret ?? null,
   })
 }
 
@@ -34,6 +34,9 @@ export async function PATCH(request: NextRequest) {
   if ('stripe_secret_key' in body) {
     updates.stripe_secret_key = body.stripe_secret_key || null
   }
+  if ('stripe_webhook_secret' in body) {
+    updates.stripe_webhook_secret = body.stripe_webhook_secret || null
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'Nenhum campo válido para atualizar' }, { status: 400 })
@@ -45,8 +48,4 @@ export async function PATCH(request: NextRequest) {
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', client.id)
     .select('mp_access_token, stripe_secret_key')
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
-}
+    .sin

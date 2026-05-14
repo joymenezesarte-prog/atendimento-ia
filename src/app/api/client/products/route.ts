@@ -1,6 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireClient, getSupabaseAdmin } from '@/lib/supabase-admin'
 
+// Gera link Mercado Pago
+async function generateMPLink(token: string, name: string, description: string, price: number, siteUrl: string) {
+  const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({
+      items: [{ title: name, description: description || name, quantity: 1, unit_price: price, currency_id: 'BRL' }],
+      notification_url: `${siteUrl}/api/webhooks/mercadopago`,
+      back_urls: {
+        success: `${siteUrl}/pagamento/sucesso`,
+        failure: `${siteUrl}/pagamento/falha`,
+        pending: `${siteUrl}/pagamento/pendente`,
+      },
+      auto_return: 'approved',
+    }),
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  return { id: data.id, url: data.init_point }
+}
+
+// Gera Payment Link Stripe
+async function generateStripeLink(secretKey: string, name: string, price: number, clientId: string, siteUrl: string) {
+  const headers = {
+    'Authorization': `Bearer ${secretKey}`,
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
+
+  // 1. Cria Price (em centavos)
+  const priceBody = new URLSearchParams({
+    'unit_amount': String(Math.round(price * 100)),
+    'currency': 'brl',
+    'product_data[name]': name,
+  })
+  const priceRes = await fetch('https://api.stripe.com/v1/prices', { method: 'POST', headers, body: priceBody })
+  if (!priceRes.ok) return null
+  const priceData = await priceRes.json()
+
+  // 2. Cria Payment Link
+  const linkBody = new URLSearchParams({
+    'line_items[0][price]': priceData.id,
+    'line_items[0][quantity]': '1',
+    'metadata[client_id]': clientId,
+    'phone_number_collection[enabled]': 'true',
+    'after_completion[type]': 'redirect',
+    'after_completion[redirect][url]': `${siteUrl}/pagamento/sucesso`,
+  })
+  const linkRes = await fetch('https://api.stripe.com/v1/payment_links', { method: 'POST', headers, body: linkBody })
+  if (!linkRes.ok) return null
+  const linkData = await linkRes.json()
+  return { id: linkData.id, url: linkData.url }
+}
+
 export async function GET() {
   const client = await requireClient()
   if (!client) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -28,69 +81,4 @@ export async function POST(request: NextRequest) {
   }
 
   const db = getSupabaseAdmin()
-
-  // Busca token do cliente
-  const { data: clientData } = await db
-    .from('clients')
-    .select('mp_access_token, stripe_secret_key')
-    .eq('id', client.id)
-    .single()
-
-  let payment_link = null
-  let payment_preference_id = null
-
-  // Gera link MP automaticamente se token disponível
-  if (payment_provider === 'mercadopago' && clientData?.mp_access_token) {
-    try {
-      const mpRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${clientData.mp_access_token}`,
-        },
-        body: JSON.stringify({
-          items: [{
-            title: name,
-            description: description || name,
-            quantity: 1,
-            unit_price: Number(price),
-            currency_id: 'BRL',
-          }],
-          notification_url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/webhooks/mercadopago`,
-          back_urls: {
-            success: `${process.env.NEXT_PUBLIC_SITE_URL}/pagamento/sucesso`,
-            failure: `${process.env.NEXT_PUBLIC_SITE_URL}/pagamento/falha`,
-            pending: `${process.env.NEXT_PUBLIC_SITE_URL}/pagamento/pendente`,
-          },
-          auto_return: 'approved',
-        }),
-      })
-      if (mpRes.ok) {
-        const mpData = await mpRes.json()
-        payment_preference_id = mpData.id
-        payment_link = mpData.init_point // URL de produção
-      }
-    } catch (e) {
-      console.error('Erro ao criar preferência MP:', e)
-    }
-  }
-
-  const { data, error } = await db
-    .from('products')
-    .insert({
-      client_id: client.id,
-      name,
-      description: description || null,
-      price: Number(price),
-      payment_provider: payment_provider || 'mercadopago',
-      payment_link,
-      payment_preference_id,
-      post_payment_action: post_payment_action || 'message',
-      post_payment_content: post_payment_content || null,
-    })
-    .select()
-    .single()
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data, { status: 201 })
-}
+  const siteUrl = pro

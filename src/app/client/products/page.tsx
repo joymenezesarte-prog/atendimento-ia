@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, X, Save, Trash2, Copy, Check, ExternalLink, Package, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, X, Save, Trash2, Copy, Check, ExternalLink, Package, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 
 interface Product {
   id: string;
@@ -33,8 +33,15 @@ export default function ProductsPage() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+
+  // Tokens de pagamento
   const [mpToken, setMpToken] = useState("");
-  const [savingToken, setSavingToken] = useState(false);
+  const [stripeKey, setStripeKey] = useState("");
+  const [stripeWebhookSecret, setStripeWebhookSecret] = useState("");
+  const [savingMP, setSavingMP] = useState(false);
+  const [savingStripe, setSavingStripe] = useState(false);
+  const [showStripeConfig, setShowStripeConfig] = useState(false);
+
   const [form, setForm] = useState({
     name: "", description: "", price: "", payment_provider: "mercadopago",
     post_payment_action: "message", post_payment_content: "",
@@ -53,6 +60,8 @@ export default function ProductsPage() {
     const [p, s] = await Promise.all([pRes.json(), sRes.json()]);
     setProducts(Array.isArray(p) ? p : []);
     if (s?.mp_access_token) setMpToken(s.mp_access_token);
+    if (s?.stripe_secret_key) setStripeKey(s.stripe_secret_key);
+    if (s?.stripe_webhook_secret) setStripeWebhookSecret(s.stripe_webhook_secret);
     setLoading(false);
   }
 
@@ -67,11 +76,8 @@ export default function ProductsPage() {
   function openEdit(p: Product) {
     setEditing(p);
     setForm({
-      name: p.name,
-      description: p.description ?? "",
-      price: String(p.price),
-      payment_provider: p.payment_provider,
-      post_payment_action: p.post_payment_action,
+      name: p.name, description: p.description ?? "", price: String(p.price),
+      payment_provider: p.payment_provider, post_payment_action: p.post_payment_action,
       post_payment_content: p.post_payment_content ?? "",
     });
     setShowModal(true);
@@ -84,23 +90,18 @@ export default function ProductsPage() {
       const url = editing ? `/api/client/products/${editing.id}` : "/api/client/products";
       const method = editing ? "PATCH" : "POST";
       const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
+        method, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, price: parseFloat(form.price) }),
       });
       if (res.ok) {
         showToast("success", editing ? "Produto atualizado!" : "Produto criado! Link gerado automaticamente.");
-        setShowModal(false);
-        load();
+        setShowModal(false); load();
       } else {
         const err = await res.json();
         showToast("error", err.error || "Erro ao salvar");
       }
-    } catch {
-      showToast("error", "Erro de conexão");
-    } finally {
-      setSaving(false);
-    }
+    } catch { showToast("error", "Erro de conexão"); }
+    finally { setSaving(false); }
   }
 
   async function handleDelete(id: string) {
@@ -110,26 +111,26 @@ export default function ProductsPage() {
     else showToast("error", "Erro ao remover");
   }
 
-  async function saveToken() {
-    setSavingToken(true);
+  async function saveSettings(fields: Record<string, string>, setLoading: (v: boolean) => void) {
+    setLoading(true);
     const res = await fetch("/api/client/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mp_access_token: mpToken }),
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
     });
-    setSavingToken(false);
-    if (res.ok) showToast("success", "Token salvo! Novos produtos já gerarão links automaticamente.");
-    else showToast("error", "Erro ao salvar token");
+    setLoading(false);
+    if (res.ok) showToast("success", "Configuração salva!");
+    else showToast("error", "Erro ao salvar");
   }
 
   function copyLink(link: string, id: string) {
     navigator.clipboard.writeText(link);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
+    setCopied(id); setTimeout(() => setCopied(null), 2000);
   }
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const actionLabel = (val: string) => POST_ACTIONS.find(a => a.value === val)?.label ?? val;
+  const providerLabel = (p: string) => p === "stripe" ? "Stripe" : "Mercado Pago";
+  const providerColor = (p: string) => p === "stripe" ? "#635bff" : "var(--green)";
 
   if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}><div className="spinner" /></div>;
 
@@ -148,41 +149,96 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Token MP */}
-      <div className="card" style={{ padding: "20px", marginBottom: "24px" }}>
+      {/* Config Mercado Pago */}
+      <div className="card" style={{ padding: "20px", marginBottom: "16px" }}>
         <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>
-          🔑 Mercado Pago — Token de Acesso
+          🟢 Mercado Pago — Access Token
         </h3>
         <p style={{ color: "var(--gray-500)", fontSize: "12px", marginBottom: "12px" }}>
-          Cole seu Access Token do MP para gerar links de pagamento automaticamente.
-          <a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" style={{ color: "var(--green)", marginLeft: "6px" }}>
-            Pegar token ↗
-          </a>
+          Para pagamentos com Pix, cartão, boleto e mais.
+          <a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" style={{ color: "var(--green)", marginLeft: "6px" }}>Obter token ↗</a>
         </p>
         <div style={{ display: "flex", gap: "10px" }}>
-          <input
-            className="input"
-            type="password"
-            value={mpToken}
-            onChange={e => setMpToken(e.target.value)}
-            placeholder="APP_USR-..."
-            style={{ flex: 1 }}
-          />
-          <button className="btn-primary" onClick={saveToken} disabled={savingToken || !mpToken}>
-            <Save size={14} /> {savingToken ? "Salvando..." : "Salvar"}
+          <input className="input" type="password" value={mpToken} onChange={e => setMpToken(e.target.value)} placeholder="APP_USR-..." style={{ flex: 1 }} />
+          <button className="btn-primary" onClick={() => saveSettings({ mp_access_token: mpToken }, setSavingMP)} disabled={savingMP || !mpToken}>
+            <Save size={14} /> {savingMP ? "Salvando..." : "Salvar"}
           </button>
         </div>
       </div>
 
-      {/* Header */}
+      {/* Config Stripe */}
+      <div className="card" style={{ padding: "20px", marginBottom: "24px" }}>
+        <button
+          onClick={() => setShowStripeConfig(s => !s)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          <div>
+            <h3 style={{ color: "var(--gray-900)", fontSize: "14px", fontWeight: 700, marginBottom: "2px", textAlign: "left" }}>
+              💜 Stripe — Chave Secreta
+            </h3>
+            <p style={{ color: "var(--gray-500)", fontSize: "12px", textAlign: "left" }}>
+              Para pagamentos internacionais com cartão de crédito.
+            </p>
+          </div>
+          {showStripeConfig ? <ChevronUp size={16} style={{ color: "var(--gray-400)", flexShrink: 0 }} /> : <ChevronDown size={16} style={{ color: "var(--gray-400)", flexShrink: 0 }} />}
+        </button>
+
+        {showStripeConfig && (
+          <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div>
+              <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>
+                Secret Key
+                <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" style={{ color: "#635bff", fontWeight: 400, marginLeft: "6px" }}>Stripe Dashboard ↗</a>
+              </label>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <input className="input" type="password" value={stripeKey} onChange={e => setStripeKey(e.target.value)} placeholder="sk_live_..." style={{ flex: 1 }} />
+                <button
+                  className="btn-primary"
+                  style={{ background: "#635bff" }}
+                  onClick={() => saveSettings({ stripe_secret_key: stripeKey }, setSavingStripe)}
+                  disabled={savingStripe || !stripeKey}
+                >
+                  <Save size={14} /> Salvar
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>
+                Webhook Secret
+                <span style={{ color: "var(--gray-400)", fontWeight: 400, marginLeft: "6px" }}>
+                  Stripe Dashboard → Desenvolvedores → Webhooks → Adicionar endpoint:
+                  <code style={{ background: "var(--gray-100)", padding: "1px 4px", borderRadius: "4px", marginLeft: "4px", fontSize: "11px" }}>
+                    https://app.atendimentoia.cloud/api/webhooks/stripe
+                  </code>
+                </span>
+              </label>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <input className="input" type="password" value={stripeWebhookSecret} onChange={e => setStripeWebhookSecret(e.target.value)} placeholder="whsec_..." style={{ flex: 1 }} />
+                <button
+                  className="btn-primary"
+                  style={{ background: "#635bff" }}
+                  onClick={() => saveSettings({ stripe_webhook_secret: stripeWebhookSecret }, setSavingStripe)}
+                  disabled={savingStripe || !stripeWebhookSecret}
+                >
+                  <Save size={14} /> Salvar
+                </button>
+              </div>
+              <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "6px" }}>
+                Evento a escutar: <code style={{ background: "var(--gray-100)", padding: "1px 4px", borderRadius: "4px" }}>checkout.session.completed</code>
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Header lista */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
         <div>
           <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800 }}>Meus Produtos</h2>
           <p style={{ color: "var(--gray-500)", fontSize: "13px", marginTop: "2px" }}>{products.length} produto{products.length !== 1 ? "s" : ""} cadastrado{products.length !== 1 ? "s" : ""}</p>
         </div>
-        <button className="btn-primary" onClick={openCreate}>
-          <Plus size={16} /> Novo Produto
-        </button>
+        <button className="btn-primary" onClick={openCreate}><Plus size={16} /> Novo Produto</button>
       </div>
 
       {/* Lista */}
@@ -198,41 +254,33 @@ export default function ProductsPage() {
             <div key={p.id} className="card" style={{ padding: "18px 20px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
                     <span style={{ color: "var(--gray-900)", fontSize: "15px", fontWeight: 700 }}>{p.name}</span>
                     <span style={{ background: "var(--green-50)", color: "var(--green)", fontSize: "13px", fontWeight: 700, padding: "2px 8px", borderRadius: "6px" }}>{fmt(p.price)}</span>
+                    <span style={{ background: p.payment_provider === "stripe" ? "rgba(99,91,255,0.08)" : "var(--green-50)", color: providerColor(p.payment_provider), fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px" }}>
+                      {providerLabel(p.payment_provider)}
+                    </span>
                     <span style={{ background: p.status === "active" ? "var(--green-50)" : "var(--gray-100)", color: p.status === "active" ? "var(--green)" : "var(--gray-400)", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px" }}>
                       {p.status === "active" ? "Ativo" : "Inativo"}
                     </span>
                   </div>
                   {p.description && <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "8px" }}>{p.description}</p>}
-                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                    <span style={{ color: "var(--gray-400)", fontSize: "12px" }}>
-                      Pós-pagamento: <strong style={{ color: "var(--gray-700)" }}>{actionLabel(p.post_payment_action)}</strong>
-                    </span>
-                  </div>
-                  {p.payment_link && (
+                  <span style={{ color: "var(--gray-400)", fontSize: "12px" }}>
+                    Pós-pagamento: <strong style={{ color: "var(--gray-700)" }}>{actionLabel(p.post_payment_action)}</strong>
+                  </span>
+                  {p.payment_link ? (
                     <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-                      <input
-                        readOnly
-                        value={p.payment_link}
-                        style={{ flex: 1, fontSize: "11px", padding: "5px 8px", background: "var(--gray-50)", border: "1px solid var(--gray-200)", borderRadius: "6px", color: "var(--gray-600)", fontFamily: "monospace" }}
-                      />
-                      <button
-                        className="btn-ghost"
-                        style={{ padding: "5px 10px", fontSize: "12px" }}
-                        onClick={() => copyLink(p.payment_link!, p.id)}
-                      >
+                      <input readOnly value={p.payment_link} style={{ flex: 1, fontSize: "11px", padding: "5px 8px", background: "var(--gray-50)", border: "1px solid var(--gray-200)", borderRadius: "6px", color: "var(--gray-600)", fontFamily: "monospace" }} />
+                      <button className="btn-ghost" style={{ padding: "5px 10px", fontSize: "12px" }} onClick={() => copyLink(p.payment_link!, p.id)}>
                         {copied === p.id ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar</>}
                       </button>
                       <a href={p.payment_link} target="_blank" rel="noreferrer" className="btn-ghost" style={{ padding: "5px 10px", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px", textDecoration: "none", color: "inherit" }}>
                         <ExternalLink size={13} /> Abrir
                       </a>
                     </div>
-                  )}
-                  {!p.payment_link && (
+                  ) : (
                     <p style={{ color: "var(--danger)", fontSize: "12px", marginTop: "8px" }}>
-                      ⚠️ Link não gerado — adicione seu token do Mercado Pago acima
+                      ⚠️ Link não gerado — configure o token de pagamento acima
                     </p>
                   )}
                 </div>
@@ -256,61 +304,4 @@ export default function ProductsPage() {
             </h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Nome do produto *</label>
-                <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Plano Básico, Consultoria 1h, Curso X" />
-              </div>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Descrição</label>
-                <input className="input" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Breve descrição do produto..." />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div>
-                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Preço (R$) *</label>
-                  <input className="input" type="number" step="0.01" min="0" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0,00" />
-                </div>
-                <div>
-                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Processador</label>
-                  <select className="input" value={form.payment_provider} onChange={e => setForm(f => ({ ...f, payment_provider: e.target.value }))}>
-                    <option value="mercadopago">Mercado Pago (+ Pix)</option>
-                    <option value="stripe">Stripe</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "14px" }}>
-                <label style={{ display: "block", color: "var(--gray-700)", fontSize: "12px", fontWeight: 700, marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  Ação após pagamento confirmado
-                </label>
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" }}>
-                  {POST_ACTIONS.map(a => (
-                    <label key={a.value} style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", padding: "8px 10px", borderRadius: "8px", background: form.post_payment_action === a.value ? "var(--green-50)" : "var(--gray-50)", border: `1px solid ${form.post_payment_action === a.value ? "rgba(34,197,94,0.3)" : "var(--gray-100)"}` }}>
-                      <input type="radio" name="action" value={a.value} checked={form.post_payment_action === a.value} onChange={() => setForm(f => ({ ...f, post_payment_action: a.value }))} style={{ accentColor: "var(--green)" }} />
-                      <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--gray-800)" }}>{a.label}</span>
-                    </label>
-                  ))}
-                </div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>
-                  Conteúdo da mensagem pós-pagamento
-                </label>
-                <textarea
-                  className="input"
-                  value={form.post_payment_content}
-                  onChange={e => setForm(f => ({ ...f, post_payment_content: e.target.value }))}
-                  placeholder={POST_ACTIONS.find(a => a.value === form.post_payment_action)?.placeholder}
-                  rows={3}
-                  style={{ resize: "vertical" }}
-                />
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
-              <button className="btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn-primary" onClick={handleSave} disabled={saving || !form.name || !form.price}>
-                {saving ? "Salvando..." : editing ? "Salvar Alterações" : "Criar Produto"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                <label
