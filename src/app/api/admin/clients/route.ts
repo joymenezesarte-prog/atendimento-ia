@@ -11,7 +11,7 @@ export async function GET() {
     .from('clients')
     .select(`
       id, company_name, contact_name, email, phone,
-      plan_id, status, stripe_customer_id, gemini_api_key,
+      plan_id, status, stripe_customer_id, gemini_api_key, modules,
       created_at, updated_at,
       agents(count),
       leads(count)
@@ -69,5 +69,4 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data, { status: 201 })
-}
+  return NextResponse.json(data, { status: 

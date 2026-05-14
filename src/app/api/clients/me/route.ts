@@ -18,7 +18,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('clients')
-    .select('id, company_name, contact_name, email, phone, plan_id, status')
+    .select('id, company_name, contact_name, email, phone, plan_id, status, modules')
     .eq('user_id', user.id)
     .single()
 
@@ -40,5 +40,4 @@ export async function PATCH(request: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
-}
+  return NextResponse.json

@@ -14,17 +14,19 @@ interface ClientInfo {
   company_name: string;
   contact_name: string;
   plan_id: string | null;
+  modules: Record<string, boolean> | null;
 }
 
-const menuItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/client" },
-  { id: "conversations", label: "Conversas", icon: MessageSquare, path: "/client/conversations" },
-  { id: "leads", label: "Leads", icon: Target, path: "/client/leads" },
-  { id: "calendar", label: "Agendamentos", icon: Calendar, path: "/client/calendar" },
-  { id: "products", label: "Produtos", icon: Package, path: "/client/products" },
-  { id: "reports", label: "Relatórios", icon: BarChart3, path: "/client/reports" },
-  { id: "billing", label: "Assinatura", icon: CreditCard, path: "/client/billing" },
-  { id: "team", label: "Equipe", icon: Users, path: "/client/team" },
+// Todos os itens disponíveis — filtrados dinamicamente por módulos habilitados
+const ALL_MENU_ITEMS = [
+  { id: "dashboard",     label: "Dashboard",    icon: LayoutDashboard, path: "/client",               alwaysVisible: true },
+  { id: "conversations", label: "Conversas",    icon: MessageSquare,   path: "/client/conversations", alwaysVisible: false },
+  { id: "leads",         label: "Leads",        icon: Target,          path: "/client/leads",          alwaysVisible: false },
+  { id: "calendar",      label: "Agendamentos", icon: Calendar,        path: "/client/calendar",       alwaysVisible: false },
+  { id: "products",      label: "Produtos",     icon: Package,         path: "/client/products",       alwaysVisible: false },
+  { id: "reports",       label: "Relatórios",   icon: BarChart3,       path: "/client/reports",        alwaysVisible: false },
+  { id: "billing",       label: "Assinatura",   icon: CreditCard,      path: "/client/billing",        alwaysVisible: true  },
+  { id: "team",          label: "Equipe",       icon: Users,           path: "/client/team",           alwaysVisible: false },
 ];
 
 const planLabels: Record<string, string> = {
@@ -68,6 +70,14 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
   const companyName = clientInfo?.company_name || "Minha Empresa";
   const planLabel = clientInfo?.plan_id ? planLabels[clientInfo.plan_id] : null;
+
+  // Filtra o menu: itens sempre visíveis + itens habilitados pelos módulos
+  const menuItems = ALL_MENU_ITEMS.filter(item => {
+    if (item.alwaysVisible) return true;
+    if (!clientInfo) return false; // aguarda dados antes de mostrar
+    if (!clientInfo.modules) return true; // se modules é null/undefined, mostra tudo (retrocompatível)
+    return clientInfo.modules[item.id] === true;
+  });
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--gray-50)" }}>
@@ -154,21 +164,4 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       <MouseGlow />
 
       <main style={{ flex: 1, marginLeft: collapsed ? "68px" : "240px", transition: "margin-left 0.2s ease", position: "relative", zIndex: 1 }}>
-        <header style={{
-          height: "64px", borderBottom: "1px solid var(--gray-100)",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 28px", background: "var(--white)", position: "sticky", top: 0, zIndex: 40,
-        }}>
-          <h1 style={{ color: "var(--gray-900)", fontSize: "16px", fontWeight: 700 }}>
-            {menuItems.find(i => isActive(i.path))?.label || "Dashboard"}
-          </h1>
-          <button className="btn-ghost" style={{ position: "relative" }}>
-            <Bell size={18} />
-            <span style={{ position: "absolute", top: "-2px", right: "-2px", width: "8px", height: "8px", borderRadius: "50%", background: "var(--green)", border: "2px solid var(--white)" }} />
-          </button>
-        </header>
-        <div style={{ padding: "28px" }}>{children}</div>
-      </main>
-    </div>
-  );
-}
+    
