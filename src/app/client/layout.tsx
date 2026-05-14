@@ -6,7 +6,7 @@ import MouseGlow from "@/components/MouseGlow";
 import {
   LayoutDashboard, MessageSquare, Target, Calendar,
   BarChart3, CreditCard, Users, ChevronLeft, ChevronRight,
-  Bell, LogOut
+  Bell, LogOut, Package
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
@@ -21,6 +21,7 @@ const menuItems = [
   { id: "conversations", label: "Conversas", icon: MessageSquare, path: "/client/conversations" },
   { id: "leads", label: "Leads", icon: Target, path: "/client/leads" },
   { id: "calendar", label: "Agendamentos", icon: Calendar, path: "/client/calendar" },
+  { id: "products", label: "Produtos", icon: Package, path: "/client/products" },
   { id: "reports", label: "Relatórios", icon: BarChart3, path: "/client/reports" },
   { id: "billing", label: "Assinatura", icon: CreditCard, path: "/client/billing" },
   { id: "team", label: "Equipe", icon: Users, path: "/client/team" },
