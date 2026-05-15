@@ -10,7 +10,7 @@ export async function GET() {
     .from('agents')
     .select(`
       id, name, channel, phone_number, status, personality, instructions,
-      features, feature_config, chatwoot_inbox_id, chatwoot_website_token,
+      features, feature_config, chatwoot_inbox_id, chatwoot_website_token, chatwoot_instagram_inbox_id,
       google_calendar_id, conversations_count, leads_count, created_at,
       clients(id, company_name)
     `)

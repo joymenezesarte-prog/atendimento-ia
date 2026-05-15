@@ -102,6 +102,7 @@ interface Agent {
   google_connected: boolean;
   google_calendar_id: string | null;
   chatwoot_website_token: string | null;
+  chatwoot_instagram_inbox_id: number | null;
   conversations_count: number;
   leads_count: number;
   clients: { id: string; company_name: string } | null;
@@ -152,6 +153,7 @@ export default function AgentsPage() {
           features: updated.features ?? {},
           feature_config: updated.feature_config ?? {},
           websiteToken: updated.chatwoot_website_token ?? "",
+          instagramInboxId: String(updated.chatwoot_instagram_inbox_id ?? ""),
         });
       }
     }
@@ -181,8 +183,8 @@ export default function AgentsPage() {
   const [form, setForm] = useState({ clientId: "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "" });
   const [editForm, setEditForm] = useState<{
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
-    personality: string; instructions: string; features: Record<string, boolean>; feature_config: Record<string, string>; websiteToken: string;
-  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {}, websiteToken: "" });
+    personality: string; instructions: string; features: Record<string, boolean>; feature_config: Record<string, string>; websiteToken: string; instagramInboxId: string;
+  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {}, websiteToken: "", instagramInboxId: "" });
 
   useEffect(() => { load(); }, []);
 
@@ -198,6 +200,7 @@ export default function AgentsPage() {
       features: agent.features ?? {},
       feature_config: agent.feature_config ?? {},
       websiteToken: agent.chatwoot_website_token ?? "",
+      instagramInboxId: String(agent.chatwoot_instagram_inbox_id ?? ""),
     });
   }
 
@@ -226,6 +229,7 @@ export default function AgentsPage() {
           features: editForm.features,
           feature_config: editForm.feature_config,
           chatwoot_website_token: editForm.websiteToken || null,
+          chatwoot_instagram_inbox_id: editForm.instagramInboxId ? parseInt(editForm.instagramInboxId) : null,
         }),
       });
       if (!res.ok) {
@@ -520,6 +524,30 @@ export default function AgentsPage() {
                   </div>
                 )}
               </div>
+
+              {/* Instagram */}
+              <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
+                  Instagram Direct
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", padding: "8px 12px", background: "linear-gradient(135deg, rgba(131,58,180,0.08), rgba(252,180,69,0.08))", borderRadius: "8px", border: "1px solid rgba(131,58,180,0.15)" }}>
+                  <span style={{ fontSize: "14px" }}>📸</span>
+                  <p style={{ color: "var(--gray-600)", fontSize: "12px" }}>
+                    Crie uma inbox do tipo <strong>Instagram</strong> no Chatwoot e cole o ID abaixo.
+                  </p>
+                </div>
+                <input
+                  className="input"
+                  type="number"
+                  value={editForm.instagramInboxId}
+                  onChange={e => setEditForm(f => ({ ...f, instagramInboxId: e.target.value }))}
+                  placeholder="ID da inbox Instagram no Chatwoot"
+                />
+                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "5px" }}>
+                  Chatwoot → Configurações → Caixas de entrada → Instagram → ID
+                </p>
+              </div>
+
 
               {/* Feature Toggles */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
