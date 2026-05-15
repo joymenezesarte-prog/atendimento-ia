@@ -6,7 +6,7 @@ import MouseGlow from "@/components/MouseGlow";
 import {
   LayoutDashboard, MessageSquare, Target, Calendar,
   BarChart3, CreditCard, Users, ChevronLeft, ChevronRight,
-  Bell, LogOut, Package, Globe, Instagram
+  Bell, LogOut, Package, Globe, AtSign
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
@@ -23,7 +23,7 @@ const ALL_MENU_ITEMS = [
   { id: "leads",        label: "Leads",        icon: Target,          path: "/client/leads",              alwaysVisible: false },
   { id: "calendar",     label: "Agendamentos", icon: Calendar,        path: "/client/calendar",           alwaysVisible: false },
   { id: "website_chat",   label: "Chat no Site",    icon: Globe,      path: "/client/website-chat",       alwaysVisible: false },
-  { id: "instagram_chat", label: "Chat Instagram", icon: Instagram,  path: "/client/instagram-chat",     alwaysVisible: false },
+  { id: "instagram_chat", label: "Chat AtSign", icon: AtSign,  path: "/client/instagram-chat",     alwaysVisible: false },
   { id: "products",     label: "Produtos",     icon: Package,         path: "/client/products",           alwaysVisible: false },
   { id: "reports",      label: "Relatórios",   icon: BarChart3,       path: "/client/reports",            alwaysVisible: false },
   { id: "billing",      label: "Assinatura",   icon: CreditCard,      path: "/client/billing",            alwaysVisible: true  },

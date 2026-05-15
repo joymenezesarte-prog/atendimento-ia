@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Instagram, MessageCircle, ExternalLink } from "lucide-react";
+import { AtSign, MessageCircle } from "lucide-react";
 
 interface Conversation {
   id: number;
@@ -11,7 +11,7 @@ interface Conversation {
   status: string;
 }
 
-export default function InstagramChatPage() {
+export default function AtSignChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,14 +33,14 @@ export default function InstagramChatPage() {
     <div style={{ maxWidth: "760px" }}>
       <div style={{ marginBottom: "24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800 }}>Chat Instagram</h2>
+          <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800 }}>Chat AtSign</h2>
           <p style={{ color: "var(--gray-500)", fontSize: "13px", marginTop: "4px" }}>
-            Mensagens recebidas via Instagram Direct
+            Mensagens recebidas via AtSign Direct
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", background: "linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)", borderRadius: "8px" }}>
-          <Instagram size={14} style={{ color: "white" }} />
-          <span style={{ color: "white", fontSize: "12px", fontWeight: 700 }}>Instagram DM</span>
+          <AtSign size={14} style={{ color: "white" }} />
+          <span style={{ color: "white", fontSize: "12px", fontWeight: 700 }}>AtSign DM</span>
         </div>
       </div>
 
@@ -50,10 +50,10 @@ export default function InstagramChatPage() {
         </div>
       ) : conversations.length === 0 ? (
         <div className="card" style={{ padding: "48px", textAlign: "center" }}>
-          <Instagram size={36} style={{ color: "var(--gray-300)", margin: "0 auto 12px" }} />
+          <AtSign size={36} style={{ color: "var(--gray-300)", margin: "0 auto 12px" }} />
           <p style={{ color: "var(--gray-500)", fontSize: "14px", fontWeight: 600 }}>Nenhuma conversa ainda</p>
           <p style={{ color: "var(--gray-400)", fontSize: "13px", marginTop: "6px" }}>
-            As mensagens do Instagram Direct aparecerão aqui automaticamente.
+            As mensagens do AtSign Direct aparecerão aqui automaticamente.
           </p>
         </div>
       ) : (
@@ -65,7 +65,7 @@ export default function InstagramChatPage() {
                 background: "linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <Instagram size={18} style={{ color: "white" }} />
+                <AtSign size={18} style={{ color: "white" }} />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
