@@ -60,10 +60,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { data: existing } = await db.from('products').select('*').eq('id', id).single()
   if (!existing || existing.client_id !== client.id) {
-    return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
+    return NextResponse.json({ error: 'Nao encontrado' }, { status: 404 })
   }
 
-  // Regenera link se mudou preço, nome ou provedor
   if (body.price || body.name || body.payment_provider) {
     const { data: clientData } = await db
       .from('clients')
@@ -78,4 +77,43 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     if (provider === 'mercadopago' && clientData?.mp_access_token) {
       try {
-        const result = await generateMPLink(clientData.mp_access_token, name, description, price, site
+        const result = await generateMPLink(clientData.mp_access_token, name, description, price, siteUrl)
+        if (result) { body.payment_preference_id = result.id; body.payment_link = result.url }
+      } catch (e) { console.error('Erro regen MP:', e) }
+    }
+
+    if (provider === 'stripe' && clientData?.stripe_secret_key) {
+      try {
+        const result = await generateStripeLink(clientData.stripe_secret_key, name, price, client.id, siteUrl)
+        if (result) { body.payment_preference_id = result.id; body.payment_link = result.url }
+      } catch (e) { console.error('Erro regen Stripe:', e) }
+    }
+  }
+
+  const { data, error } = await db
+    .from('products')
+    .update({ ...body, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}
+
+export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const client = await requireClient()
+  if (!client) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const db = getSupabaseAdmin()
+
+  const { data: existing } = await db.from('products').select('client_id').eq('id', id).single()
+  if (!existing || existing.client_id !== client.id) {
+    return NextResponse.json({ error: 'Nao encontrado' }, { status: 404 })
+  }
+
+  const { error } = await db.from('products').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
+}

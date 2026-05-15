@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireClient, getSupabaseAdmin } from '@/lib/supabase-admin'
 
-// Gera link Mercado Pago
 async function generateMPLink(token: string, name: string, description: string, price: number, siteUrl: string) {
   const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
     method: 'POST',
@@ -22,14 +21,11 @@ async function generateMPLink(token: string, name: string, description: string, 
   return { id: data.id, url: data.init_point }
 }
 
-// Gera Payment Link Stripe
 async function generateStripeLink(secretKey: string, name: string, price: number, clientId: string, siteUrl: string) {
   const headers = {
     'Authorization': `Bearer ${secretKey}`,
     'Content-Type': 'application/x-www-form-urlencoded',
   }
-
-  // 1. Cria Price (em centavos)
   const priceBody = new URLSearchParams({
     'unit_amount': String(Math.round(price * 100)),
     'currency': 'brl',
@@ -39,7 +35,6 @@ async function generateStripeLink(secretKey: string, name: string, price: number
   if (!priceRes.ok) return null
   const priceData = await priceRes.json()
 
-  // 2. Cria Payment Link
   const linkBody = new URLSearchParams({
     'line_items[0][price]': priceData.id,
     'line_items[0][quantity]': '1',
@@ -77,8 +72,51 @@ export async function POST(request: NextRequest) {
   const { name, description, price, payment_provider, post_payment_action, post_payment_content } = body
 
   if (!name || !price) {
-    return NextResponse.json({ error: 'name e price são obrigatórios' }, { status: 400 })
+    return NextResponse.json({ error: 'name e price sao obrigatorios' }, { status: 400 })
   }
 
   const db = getSupabaseAdmin()
-  const siteUrl = pro
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://app.atendimentoia.cloud'
+
+  const { data: clientData } = await db
+    .from('clients')
+    .select('mp_access_token, stripe_secret_key')
+    .eq('id', client.id)
+    .single()
+
+  let payment_link = null
+  let payment_preference_id = null
+
+  if (payment_provider === 'mercadopago' && clientData?.mp_access_token) {
+    try {
+      const result = await generateMPLink(clientData.mp_access_token, name, description || name, Number(price), siteUrl)
+      if (result) { payment_preference_id = result.id; payment_link = result.url }
+    } catch (e) { console.error('Erro MP:', e) }
+  }
+
+  if (payment_provider === 'stripe' && clientData?.stripe_secret_key) {
+    try {
+      const result = await generateStripeLink(clientData.stripe_secret_key, name, Number(price), client.id, siteUrl)
+      if (result) { payment_preference_id = result.id; payment_link = result.url }
+    } catch (e) { console.error('Erro Stripe:', e) }
+  }
+
+  const { data, error } = await db
+    .from('products')
+    .insert({
+      client_id: client.id,
+      name,
+      description: description || null,
+      price: Number(price),
+      payment_provider: payment_provider || 'mercadopago',
+      payment_link,
+      payment_preference_id,
+      post_payment_action: post_payment_action || 'message',
+      post_payment_content: post_payment_content || null,
+    })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data, { status: 201 })
+}
