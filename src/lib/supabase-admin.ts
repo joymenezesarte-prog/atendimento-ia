@@ -29,3 +29,20 @@ export async function requireAdmin(): Promise<{ userId: string } | null> {
   if (user.email !== adminEmail) return null
   return { userId: user.id }
 }
+
+// Verifica se o usuário logado é um cliente válido e retorna os dados do cliente
+export async function requireClient(): Promise<{ id: string; user_id: string } | null> {
+  const supabase = await getSupabaseUser()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const db = getSupabaseAdmin()
+  const { data, error } = await db
+    .from('clients')
+    .select('id, user_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (error || !data) return null
+  return data
+}

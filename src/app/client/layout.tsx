@@ -17,7 +17,6 @@ interface ClientInfo {
   modules: Record<string, boolean> | null;
 }
 
-// Todos os itens disponíveis — filtrados dinamicamente por módulos habilitados
 const ALL_MENU_ITEMS = [
   { id: "dashboard",     label: "Dashboard",    icon: LayoutDashboard, path: "/client",               alwaysVisible: true },
   { id: "conversations", label: "Conversas",    icon: MessageSquare,   path: "/client/conversations", alwaysVisible: false },
@@ -71,11 +70,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const companyName = clientInfo?.company_name || "Minha Empresa";
   const planLabel = clientInfo?.plan_id ? planLabels[clientInfo.plan_id] : null;
 
-  // Filtra o menu: itens sempre visíveis + itens habilitados pelos módulos
   const menuItems = ALL_MENU_ITEMS.filter(item => {
     if (item.alwaysVisible) return true;
-    if (!clientInfo) return false; // aguarda dados antes de mostrar
-    if (!clientInfo.modules) return true; // se modules é null/undefined, mostra tudo (retrocompatível)
+    if (!clientInfo) return false;
+    if (!clientInfo.modules) return true;
     return clientInfo.modules[item.id] === true;
   });
 
@@ -164,4 +162,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       <MouseGlow />
 
       <main style={{ flex: 1, marginLeft: collapsed ? "68px" : "240px", transition: "margin-left 0.2s ease", position: "relative", zIndex: 1 }}>
-    
+        <header style={{
+          height: "64px", borderBottom: "1px solid var(--gray-100)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 28px", background: "var(--white)", position: "sticky", top: 0, zIn

@@ -38,4 +38,5 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResp
+  return NextResponse.json(data, { status: 201 })
+}

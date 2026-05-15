@@ -11,12 +11,11 @@ const PLANS = [
 ];
 const PLAN_MAP: Record<string, string> = { atendimento: "Atendimento IA", vendas: "Vendas IA", operacao: "Operação IA" };
 
-// Módulos disponíveis para habilitar/desabilitar por cliente
 const ALL_MODULES = [
   { id: "conversations", label: "💬 Conversas",    desc: "Histórico de conversas com leads" },
   { id: "leads",         label: "🎯 Leads",         desc: "CRM de leads captados pelo agente" },
   { id: "calendar",      label: "📅 Agendamentos",  desc: "Agenda e gestão de horários" },
-  { id: "products",      label: "📦 Produtos",      desc: "Catálogo de produtos + links de pagamento MP" },
+  { id: "products",      label: "📦 Produtos",      desc: "Catálogo de produtos + links de pagamento MP/Stripe" },
   { id: "reports",       label: "📊 Relatórios",    desc: "Métricas e desempenho do agente" },
   { id: "team",          label: "👥 Equipe",        desc: "Gestão de membros da equipe" },
 ];
@@ -197,7 +196,7 @@ export default function ClientsPage() {
                 </td>
                 <td style={{ padding: "14px 16px" }}>
                   <div style={{ display: "flex", gap: "6px" }}>
-                    <button className="btn-ghost" style={{ padding: "6px" }} onClick={() => openEdit(client)} title="Editar cliente e módulos"><Pencil size={14} /></button>
+                    <button className="btn-ghost" style={{ padding: "6px" }} onClick={() => openEdit(client)} title="Editar"><Pencil size={14} /></button>
                     <button className="btn-ghost" style={{ padding: "6px" }} onClick={() => router.push("/admin/agents")} title="Agentes"><Bot size={14} /></button>
                   </div>
                 </td>
@@ -207,7 +206,6 @@ export default function ClientsPage() {
         </table>
       </div>
 
-      {/* Modal */}
       {showModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
           <div className="card" style={{ width: "540px", padding: "28px", position: "relative", maxHeight: "92vh", overflowY: "auto" }}>
@@ -234,7 +232,6 @@ export default function ClientsPage() {
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-
               {/* Dados da empresa */}
               <div>
                 <p style={{ color: "var(--gray-500)", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "12px" }}>Dados da Empresa</p>
@@ -272,7 +269,7 @@ export default function ClientsPage() {
                 </div>
               </div>
 
-              {/* Módulos habilitados */}
+              {/* Módulos */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "14px" }}>
                 <button
                   onClick={() => setShowModules(s => !s)}
@@ -280,9 +277,7 @@ export default function ClientsPage() {
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                     <ToggleRight size={15} style={{ color: "var(--green)" }} />
-                    <p style={{ color: "var(--gray-700)", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Módulos do Painel
-                    </p>
+                    <p style={{ color: "var(--gray-700)", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Módulos do Painel</p>
                     <span style={{ background: "var(--green-50)", color: "var(--green)", fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "20px" }}>
                       {Object.values(modules).filter(Boolean).length}/{ALL_MODULES.length}
                     </span>
@@ -311,4 +306,7 @@ export default function ClientsPage() {
                           </div>
                           <div style={{ flexShrink: 0 }}>
                             {enabled
-                              ? <ToggleRight size={22} style={{ color: "var(--green)
+                              ? <ToggleRight size={22} style={{ color: "var(--green)" }} />
+                              : <ToggleLeft size={22} style={{ color: "var(--gray-300)" }} />
+                            }
+                     
