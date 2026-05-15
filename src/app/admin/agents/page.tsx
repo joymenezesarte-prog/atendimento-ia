@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Bot, Phone, AtSign, Globe, X, Trash2, Save, ChevronDown, ChevronUp, CheckCircle, AlertCircle } from "lucide-react";
+import { Plus, Bot, Phone, AtSign, Globe, X, Trash2, Save, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Calendar, Link2, RefreshCw } from "lucide-react";
 
 const CHANNELS = [
   { id: "whatsapp", label: "WhatsApp", icon: Phone },
@@ -69,7 +69,6 @@ const FEATURES: { key: string; label: string; desc: string; config?: { field: st
     desc: "Envia instruções antes do compromisso",
     config: [{ field: "pre_instructions_text", label: "Texto das instruções", placeholder: "Ex: Traga seu RG e chegue 10 min antes..." }],
   },
-
   {
     key: "feat_post_sale",
     label: "🌟 Pós-Venda",
@@ -101,6 +100,8 @@ interface Agent {
   features: Record<string, boolean>;
   feature_config: Record<string, string>;
   chatwoot_inbox_id: number | null;
+  google_refresh_token: string | null;
+  google_calendar_id: string | null;
   conversations_count: number;
   leads_count: number;
   clients: { id: string; company_name: string } | null;
@@ -121,6 +122,28 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [showFeatures, setShowFeatures] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
+
+  // Trata retorno do OAuth Google
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get('google_success');
+    const error = params.get('google_error');
+    if (success) {
+      showToast("success", "Google Agenda conectado com sucesso!");
+      load();
+      router.replace('/admin/agents');
+    } else if (error) {
+      const msgs: Record<string, string> = {
+        no_refresh_token: "Token não retornado — tente novamente",
+        token_exchange_failed: "Falha ao trocar código por token",
+        db_error: "Erro ao salvar token no banco",
+        access_denied: "Acesso negado pelo Google",
+      };
+      showToast("error", msgs[error] || `Erro: ${error}`);
+      router.replace('/admin/agents');
+    }
+  }, []);
+
   const [form, setForm] = useState({ clientId: "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "" });
   const [editForm, setEditForm] = useState<{
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
@@ -376,6 +399,45 @@ export default function AgentsPage() {
                 />
               </div>
 
+              {/* Google Agenda */}
+              <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
+                  Google Agenda
+                </label>
+                {selected?.google_refresh_token ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", background: "var(--green-50)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "8px" }}>
+                    <CheckCircle size={16} style={{ color: "var(--green)", flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 700 }}>Conectado</p>
+                      <p style={{ color: "var(--gray-500)", fontSize: "11px" }}>{selected.google_calendar_id || "Calendário primário"}</p>
+                    </div>
+                    <a
+                      href={`/api/admin/google/auth?agent_id=${selected.id}`}
+                      style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", textDecoration: "none", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white" }}
+                    >
+                      <RefreshCw size={11} /> Reconectar
+                    </a>
+                  </div>
+                ) : (
+                  <a
+                    href={`/api/admin/google/auth?agent_id=${selected?.id}`}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px",
+                      background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px",
+                      textDecoration: "none", color: "var(--gray-700)", fontSize: "13px", fontWeight: 600,
+                      transition: "all 0.15s", cursor: "pointer",
+                    }}
+                  >
+                    <Calendar size={15} style={{ color: "#4285f4" }} />
+                    <span>Conectar Google Agenda do cliente</span>
+                    <Link2 size={13} style={{ color: "var(--gray-400)", marginLeft: "auto" }} />
+                  </a>
+                )}
+                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "6px" }}>
+                  Faça login com o Gmail do cliente para autorizar o agendamento automático.
+                </p>
+              </div>
+
               {/* Feature Toggles */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
                 <button
@@ -383,7 +445,7 @@ export default function AgentsPage() {
                   style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: showFeatures ? "10px" : 0 }}
                 >
                   <span style={{ color: "var(--gray-700)", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    Funcionalidades ({Object.values(editForm.features).filter(Boolean).length}/14 ativas)
+                    Funcionalidades ({Object.values(editForm.features).filter(Boolean).length}/{FEATURES.length} ativas)
                   </span>
                   {showFeatures ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
@@ -411,7 +473,6 @@ export default function AgentsPage() {
                           </div>
                         </div>
 
-                        {/* Config fields when feature is active */}
                         {editForm.features[feat.key] && feat.config && (
                           <div style={{ marginTop: "4px", marginLeft: "10px", padding: "10px", background: "var(--gray-50)", borderRadius: "var(--radius-sm)", borderLeft: "3px solid var(--green)", display: "flex", flexDirection: "column", gap: "8px" }}>
                             {feat.config.map(cfg => (
@@ -447,46 +508,48 @@ export default function AgentsPage() {
       {/* Modal Novo Agente */}
       {showModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-          <div className="card" style={{ width: "480px", padding: "28px", position: "relative", maxHeight: "90vh", overflowY: "auto" }}>
-            <button onClick={() => setShowModal(false)} style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: "var(--gray-400)" }}><X size={18} /></button>
-            <h3 style={{ color: "var(--gray-900)", fontSize: "16px", fontWeight: 800, marginBottom: "20px" }}>Novo Agente</h3>
+          <div className="card" style={{ width: "480px", padding: "28px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ color: "var(--gray-900)", fontSize: "16px", fontWeight: 700 }}>Novo Agente IA</h3>
+              <button className="btn-ghost" style={{ padding: "4px" }} onClick={() => setShowModal(false)}><X size={16} /></button>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Cliente *</label>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Cliente</label>
                 <select className="input" value={form.clientId} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}>
                   {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Nome do Agente *</label>
-                <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Sofia" />
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Nome do Agente</label>
+                <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Joy Atendente IA" />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                 <div>
-                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Canal *</label>
+                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Canal</label>
                   <select className="input" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
                     {CHANNELS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Nº WhatsApp</label>
+                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Nº WhatsApp</label>
                   <input className="input" value={form.phone_number} onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))} placeholder="+5511999..." />
                 </div>
               </div>
               <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Personalidade</label>
-                <input className="input" value={form.personality} onChange={e => setForm(f => ({ ...f, personality: e.target.value }))} placeholder="Ex: Simpática, profissional, usa emojis com moderação" />
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Personalidade</label>
+                <input className="input" value={form.personality} onChange={e => setForm(f => ({ ...f, personality: e.target.value }))} placeholder="Ex: Simpática, profissional, objetiva" />
               </div>
               <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "6px" }}>Instruções</label>
-                <textarea className="input" value={form.instructions} onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Instruções específicas para o agente..." rows={3} style={{ resize: "vertical" }} />
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Instruções Iniciais</label>
+                <textarea className="input" value={form.instructions} onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Você é um assistente de atendimento para..." rows={3} style={{ resize: "vertical" }} />
               </div>
-            </div>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
-              <button className="btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
-              <button className="btn-primary" onClick={handleCreate} disabled={saving || !form.name || !form.clientId}>
-                {saving ? "Criando..." : "Criar Agente"}
-              </button>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "4px" }}>
+                <button className="btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
+                <button className="btn-primary" onClick={handleCreate} disabled={saving || !form.name || !form.clientId}>
+                  {saving ? "Criando..." : "Criar Agente"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
