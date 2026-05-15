@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Bot, Phone, AtSign, Globe, X, Trash2, Save, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Calendar, Link2, RefreshCw } from "lucide-react";
+import { Plus, Bot, Phone, AtSign, Globe, X, Trash2, Save, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Calendar, Link2, RefreshCw, Copy } from "lucide-react";
 
 const CHANNELS = [
   { id: "whatsapp", label: "WhatsApp", icon: Phone },
@@ -101,6 +101,7 @@ interface Agent {
   chatwoot_inbox_id: number | null;
   google_connected: boolean;
   google_calendar_id: string | null;
+  chatwoot_website_token: string | null;
   conversations_count: number;
   leads_count: number;
   clients: { id: string; company_name: string } | null;
@@ -150,6 +151,7 @@ export default function AgentsPage() {
           instructions: updated.instructions ?? "",
           features: updated.features ?? {},
           feature_config: updated.feature_config ?? {},
+          websiteToken: updated.chatwoot_website_token ?? "",
         });
       }
     }
@@ -179,8 +181,8 @@ export default function AgentsPage() {
   const [form, setForm] = useState({ clientId: "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "" });
   const [editForm, setEditForm] = useState<{
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
-    personality: string; instructions: string; features: Record<string, boolean>; feature_config: Record<string, string>;
-  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {} });
+    personality: string; instructions: string; features: Record<string, boolean>; feature_config: Record<string, string>; websiteToken: string;
+  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {}, websiteToken: "" });
 
   useEffect(() => { load(); }, []);
 
@@ -195,6 +197,7 @@ export default function AgentsPage() {
       instructions: agent.instructions ?? "",
       features: agent.features ?? {},
       feature_config: agent.feature_config ?? {},
+      websiteToken: agent.chatwoot_website_token ?? "",
     });
   }
 
@@ -222,6 +225,7 @@ export default function AgentsPage() {
           instructions: editForm.instructions || null,
           features: editForm.features,
           feature_config: editForm.feature_config,
+          chatwoot_website_token: editForm.websiteToken || null,
         }),
       });
       if (!res.ok) {
@@ -455,6 +459,66 @@ export default function AgentsPage() {
                 <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "6px" }}>
                   Faça login com o Gmail do cliente para autorizar o agendamento automático.
                 </p>
+              </div>
+
+
+              {/* Chat no Site */}
+              <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
+                  Chat no Site (Widget)
+                </label>
+                <input
+                  className="input"
+                  value={editForm.websiteToken}
+                  onChange={e => setEditForm(f => ({ ...f, websiteToken: e.target.value }))}
+                  placeholder="Token do website inbox do Chatwoot"
+                  style={{ fontFamily: "monospace", fontSize: "12px" }}
+                />
+                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "5px" }}>
+                  Chatwoot → Configurações → Caixas de entrada → Website → Configurações → Token
+                </p>
+                {editForm.websiteToken && (
+                  <div style={{ marginTop: "10px", position: "relative" }}>
+                    <pre style={{
+                      background: "var(--gray-900)", color: "#e2e8f0",
+                      padding: "12px", borderRadius: "var(--radius-sm)",
+                      fontSize: "10px", lineHeight: "1.5", overflow: "auto",
+                      margin: 0, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                    }}>
+{`<script>
+  (function(d,t) {
+    var BASE_URL="${process.env.NEXT_PUBLIC_CHATWOOT_URL||'https://chatwoot.atendimentoia.cloud'}";
+    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+    g.src=BASE_URL+"/packs/js/sdk.js";
+    g.defer=true; g.async=true;
+    s.parentNode.insertBefore(g,s);
+    g.onload=function(){
+      window.chatwootSDK.run({
+        websiteToken: '${editForm.websiteToken}',
+        baseUrl: BASE_URL
+      })
+    }
+  })(document,"script");
+</script>`}
+                    </pre>
+                    <button
+                      onClick={() => {
+                        const base = process.env.NEXT_PUBLIC_CHATWOOT_URL || 'https://chatwoot.atendimentoia.cloud';
+                        const script = `<script>\n  (function(d,t) {\n    var BASE_URL="${base}";\n    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];\n    g.src=BASE_URL+"/packs/js/sdk.js";\n    g.defer=true; g.async=true;\n    s.parentNode.insertBefore(g,s);\n    g.onload=function(){\n      window.chatwootSDK.run({\n        websiteToken: '${editForm.websiteToken}',\n        baseUrl: BASE_URL\n      })\n    }\n  })(document,"script");\n<\/script>`;
+                        navigator.clipboard.writeText(script);
+                      }}
+                      style={{
+                        position: "absolute", top: "8px", right: "8px",
+                        display: "flex", alignItems: "center", gap: "4px",
+                        background: "rgba(255,255,255,0.1)", color: "white",
+                        border: "none", borderRadius: "5px", padding: "4px 8px",
+                        fontSize: "10px", fontWeight: 600, cursor: "pointer",
+                      }}
+                    >
+                      <Copy size={10} /> Copiar
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Feature Toggles */}

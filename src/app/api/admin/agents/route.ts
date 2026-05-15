@@ -10,15 +10,14 @@ export async function GET() {
     .from('agents')
     .select(`
       id, name, channel, phone_number, status, personality, instructions,
-      features, feature_config, chatwoot_inbox_id, google_calendar_id,
-      conversations_count, leads_count, created_at,
+      features, feature_config, chatwoot_inbox_id, chatwoot_website_token,
+      google_calendar_id, conversations_count, leads_count, created_at,
       clients(id, company_name)
     `)
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Adiciona flag google_connected sem expor o refresh token
   const result = (data ?? []).map((a: any) => ({
     ...a,
     google_connected: !!a.google_calendar_id,

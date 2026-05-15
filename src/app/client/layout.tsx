@@ -6,7 +6,7 @@ import MouseGlow from "@/components/MouseGlow";
 import {
   LayoutDashboard, MessageSquare, Target, Calendar,
   BarChart3, CreditCard, Users, ChevronLeft, ChevronRight,
-  Bell, LogOut, Package
+  Bell, LogOut, Package, Globe
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
@@ -18,14 +18,15 @@ interface ClientInfo {
 }
 
 const ALL_MENU_ITEMS = [
-  { id: "dashboard",     label: "Dashboard",    icon: LayoutDashboard, path: "/client",               alwaysVisible: true },
-  { id: "conversations", label: "Conversas",    icon: MessageSquare,   path: "/client/conversations", alwaysVisible: false },
-  { id: "leads",         label: "Leads",        icon: Target,          path: "/client/leads",          alwaysVisible: false },
-  { id: "calendar",      label: "Agendamentos", icon: Calendar,        path: "/client/calendar",       alwaysVisible: false },
-  { id: "products",      label: "Produtos",     icon: Package,         path: "/client/products",       alwaysVisible: false },
-  { id: "reports",       label: "Relatórios",   icon: BarChart3,       path: "/client/reports",        alwaysVisible: false },
-  { id: "billing",       label: "Assinatura",   icon: CreditCard,      path: "/client/billing",        alwaysVisible: true  },
-  { id: "team",          label: "Equipe",       icon: Users,           path: "/client/team",           alwaysVisible: false },
+  { id: "dashboard",    label: "Dashboard",    icon: LayoutDashboard, path: "/client",                    alwaysVisible: true  },
+  { id: "conversations",label: "Conversas",    icon: MessageSquare,   path: "/client/conversations",      alwaysVisible: false },
+  { id: "leads",        label: "Leads",        icon: Target,          path: "/client/leads",              alwaysVisible: false },
+  { id: "calendar",     label: "Agendamentos", icon: Calendar,        path: "/client/calendar",           alwaysVisible: false },
+  { id: "website_chat", label: "Chat no Site", icon: Globe,           path: "/client/website-chat",       alwaysVisible: false },
+  { id: "products",     label: "Produtos",     icon: Package,         path: "/client/products",           alwaysVisible: false },
+  { id: "reports",      label: "Relatórios",   icon: BarChart3,       path: "/client/reports",            alwaysVisible: false },
+  { id: "billing",      label: "Assinatura",   icon: CreditCard,      path: "/client/billing",            alwaysVisible: true  },
+  { id: "team",         label: "Equipe",       icon: Users,           path: "/client/team",               alwaysVisible: false },
 ];
 
 const planLabels: Record<string, string> = {
