@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Plus, X, Save, Trash2, Copy, Check, ExternalLink, Package,
-  CheckCircle, AlertCircle, ChevronDown, ChevronUp, Key, Webhook,
-  CreditCard, Zap, Info,
+  CheckCircle, AlertCircle, ChevronDown, ChevronUp, Webhook, Zap, Info,
 } from "lucide-react";
 
 interface Product {
@@ -29,7 +28,8 @@ const POST_ACTIONS = [
   { value: "email", label: "📧 Instruções por mensagem", placeholder: "Você receberá um e-mail com as instruções em até 24h." },
 ];
 
-const WEBHOOK_URL = "https://app.atendimentoia.cloud/api/webhooks/stripe";
+const STRIPE_WEBHOOK_URL = "https://app.atendimentoia.cloud/api/webhooks/stripe";
+const MP_WEBHOOK_URL = "https://app.atendimentoia.cloud/api/webhooks/mercadopago";
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -46,8 +46,9 @@ export default function ProductsPage() {
   const [savingMP, setSavingMP] = useState(false);
   const [savingStripe, setSavingStripe] = useState(false);
   const [showStripeGuide, setShowStripeGuide] = useState(false);
-  const [showMPConfig, setShowMPConfig] = useState(false);
-  const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [showMPGuide, setShowMPGuide] = useState(false);
+  const [copiedStripeWebhook, setCopiedStripeWebhook] = useState(false);
+  const [copiedMPWebhook, setCopiedMPWebhook] = useState(false);
 
   const [form, setForm] = useState({
     name: "", description: "", price: "", payment_provider: "mercadopago",
@@ -129,14 +130,14 @@ export default function ProductsPage() {
     else showToast("error", "Erro ao salvar");
   }
 
+  function copyText(text: string, setter: (v: boolean) => void) {
+    navigator.clipboard.writeText(text);
+    setter(true); setTimeout(() => setter(false), 2000);
+  }
+
   function copyLink(link: string, id: string) {
     navigator.clipboard.writeText(link);
     setCopied(id); setTimeout(() => setCopied(null), 2000);
-  }
-
-  function copyWebhook() {
-    navigator.clipboard.writeText(WEBHOOK_URL);
-    setCopiedWebhook(true); setTimeout(() => setCopiedWebhook(false), 2000);
   }
 
   const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -146,6 +147,53 @@ export default function ProductsPage() {
 
   const stripeConfigured = !!stripeKey && !!stripeWebhookSecret;
   const mpConfigured = !!mpToken;
+
+  const StepNumber = ({ n, done }: { n: number; done?: boolean }) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{
+        width: "30px", height: "30px", borderRadius: "50%",
+        background: done ? "var(--green)" : "#635bff",
+        color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: "13px", fontWeight: 800, flexShrink: 0,
+      }}>
+        {done ? <CheckCircle size={15} /> : n}
+      </div>
+      <div style={{ width: "2px", flex: 1, background: "var(--gray-200)", margin: "4px 0" }} />
+    </div>
+  );
+
+  const MPStepNumber = ({ n, done }: { n: number; done?: boolean }) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{
+        width: "30px", height: "30px", borderRadius: "50%",
+        background: done ? "var(--green)" : "#009ee3",
+        color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: "13px", fontWeight: 800, flexShrink: 0,
+      }}>
+        {done ? <CheckCircle size={15} /> : n}
+      </div>
+      <div style={{ width: "2px", flex: 1, background: "var(--gray-200)", margin: "4px 0" }} />
+    </div>
+  );
+
+  const CopyUrlBox = ({ url, copied: isCopied, onCopy }: { url: string; copied: boolean; onCopy: () => void }) => (
+    <div style={{ background: "var(--gray-50)", border: "1px solid var(--gray-200)", borderRadius: "8px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+      <Webhook size={14} style={{ color: "var(--gray-400)", flexShrink: 0 }} />
+      <code style={{ flex: 1, fontSize: "12px", color: "var(--gray-700)", wordBreak: "break-all" }}>{url}</code>
+      <button
+        onClick={onCopy}
+        style={{
+          background: isCopied ? "var(--green)" : "#009ee3",
+          color: "white", border: "none", borderRadius: "6px",
+          padding: "5px 10px", fontSize: "12px", fontWeight: 600,
+          cursor: "pointer", display: "flex", alignItems: "center", gap: "5px",
+          flexShrink: 0, transition: "background 0.2s",
+        }}
+      >
+        {isCopied ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar URL</>}
+      </button>
+    </div>
+  );
 
   if (loading) return (
     <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}>
@@ -168,12 +216,13 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {/* Status geral dos meios de pagamento */}
+      {/* Cards de status */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
+        {/* Mercado Pago */}
         <div
           className="card"
-          style={{ flex: 1, minWidth: "200px", padding: "14px 16px", cursor: "pointer", border: showMPConfig ? "2px solid var(--green)" : "2px solid transparent" }}
-          onClick={() => { setShowMPConfig(s => !s); setShowStripeGuide(false); }}
+          style={{ flex: 1, minWidth: "200px", padding: "14px 16px", cursor: "pointer", border: showMPGuide ? "2px solid #009ee3" : "2px solid transparent" }}
+          onClick={() => { setShowMPGuide(s => !s); setShowStripeGuide(false); }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "22px" }}>🟢</span>
@@ -182,19 +231,20 @@ export default function ProductsPage() {
                 <span style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)" }}>Mercado Pago</span>
                 {mpConfigured
                   ? <span style={{ background: "var(--green-50)", color: "var(--green)", fontSize: "11px", fontWeight: 700, padding: "2px 7px", borderRadius: "20px" }}>✓ Configurado</span>
-                  : <span style={{ background: "var(--gray-100)", color: "var(--gray-500)", fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "20px" }}>Configurar</span>
+                  : <span style={{ background: "var(--gray-100)", color: "var(--gray-500)", fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "20px" }}>Ver como configurar</span>
                 }
               </div>
               <p style={{ color: "var(--gray-500)", fontSize: "11px", marginTop: "2px" }}>Pix, cartão, boleto</p>
             </div>
-            {showMPConfig ? <ChevronUp size={14} style={{ color: "var(--gray-400)" }} /> : <ChevronDown size={14} style={{ color: "var(--gray-400)" }} />}
+            {showMPGuide ? <ChevronUp size={14} style={{ color: "var(--gray-400)" }} /> : <ChevronDown size={14} style={{ color: "var(--gray-400)" }} />}
           </div>
         </div>
 
+        {/* Stripe */}
         <div
           className="card"
           style={{ flex: 1, minWidth: "200px", padding: "14px 16px", cursor: "pointer", border: showStripeGuide ? "2px solid #635bff" : "2px solid transparent" }}
-          onClick={() => { setShowStripeGuide(s => !s); setShowMPConfig(false); }}
+          onClick={() => { setShowStripeGuide(s => !s); setShowMPGuide(false); }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "22px" }}>💜</span>
@@ -203,7 +253,7 @@ export default function ProductsPage() {
                 <span style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)" }}>Stripe</span>
                 {stripeConfigured
                   ? <span style={{ background: "rgba(99,91,255,0.1)", color: "#635bff", fontSize: "11px", fontWeight: 700, padding: "2px 7px", borderRadius: "20px" }}>✓ Configurado</span>
-                  : <span style={{ background: "var(--gray-100)", color: "var(--gray-500)", fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "20px" }}>Configurar</span>
+                  : <span style={{ background: "var(--gray-100)", color: "var(--gray-500)", fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "20px" }}>Ver como configurar</span>
                 }
               </div>
               <p style={{ color: "var(--gray-500)", fontSize: "11px", marginTop: "2px" }}>Cartão internacional</p>
@@ -213,62 +263,29 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Painel Mercado Pago */}
-      {showMPConfig && (
-        <div className="card" style={{ padding: "20px", marginBottom: "16px" }}>
-          <h3 style={{ fontSize: "14px", fontWeight: 700, color: "var(--gray-900)", marginBottom: "12px" }}>
-            🟢 Configurar Mercado Pago
-          </h3>
-          <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "14px" }}>
-            Acesse o{" "}
-            <a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" style={{ color: "var(--green)", fontWeight: 600 }}>
-              Mercado Pago Developers ↗
-            </a>
-            {" "}→ Suas aplicações → selecione ou crie uma → copie o <strong>Access Token de Produção</strong>.
-          </p>
-          <div style={{ display: "flex", gap: "10px" }}>
-            <input
-              className="input" type="password" value={mpToken}
-              onChange={e => setMpToken(e.target.value)}
-              placeholder="APP_USR-..." style={{ flex: 1 }}
-            />
-            <button className="btn-primary" onClick={() => saveSettings({ mp_access_token: mpToken }, setSavingMP)} disabled={savingMP || !mpToken}>
-              <Save size={14} /> {savingMP ? "Salvando..." : "Salvar"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Guia passo a passo Stripe */}
-      {showStripeGuide && (
+      {/* Guia Mercado Pago */}
+      {showMPGuide && (
         <div className="card" style={{ padding: "24px", marginBottom: "20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
-            <h3 style={{ fontSize: "15px", fontWeight: 800, color: "var(--gray-900)" }}>
-              💜 Como configurar o Stripe
-            </h3>
-          </div>
+          <h3 style={{ fontSize: "15px", fontWeight: 800, color: "var(--gray-900)", marginBottom: "6px" }}>
+            🟢 Como configurar o Mercado Pago
+          </h3>
 
-          {/* Info box */}
-          <div style={{ background: "rgba(99,91,255,0.06)", border: "1px solid rgba(99,91,255,0.2)", borderRadius: "10px", padding: "12px 14px", marginBottom: "22px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
-            <Zap size={15} style={{ color: "#635bff", marginTop: "1px", flexShrink: 0 }} />
-            <p style={{ color: "#635bff", fontSize: "13px", fontWeight: 500, margin: 0 }}>
-              <strong>Você não precisa criar nada no Stripe manualmente.</strong> Ao cadastrar um produto aqui, o sistema gera o link de pagamento automaticamente com o valor correto — direto na sua conta Stripe.
+          <div style={{ background: "rgba(0,158,227,0.06)", border: "1px solid rgba(0,158,227,0.25)", borderRadius: "10px", padding: "12px 14px", marginBottom: "22px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
+            <Zap size={15} style={{ color: "#009ee3", marginTop: "1px", flexShrink: 0 }} />
+            <p style={{ color: "#007ab8", fontSize: "13px", fontWeight: 500, margin: 0 }}>
+              <strong>Você não precisa criar nada manualmente no Mercado Pago.</strong> Ao cadastrar um produto aqui, o link de pagamento é gerado automaticamente com o valor correto.
             </p>
           </div>
 
-          {/* Steps */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             {/* Step 1 */}
             <div style={{ display: "flex", gap: "16px" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#635bff", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 800, flexShrink: 0 }}>1</div>
-                <div style={{ width: "2px", flex: 1, background: "var(--gray-200)", margin: "4px 0" }} />
-              </div>
+              <MPStepNumber n={1} />
               <div style={{ paddingBottom: "20px", flex: 1 }}>
-                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Crie uma conta no Stripe</p>
+                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Crie uma conta no Mercado Pago</p>
                 <p style={{ color: "var(--gray-500)", fontSize: "13px" }}>
                   Acesse{" "}
-                  <a href="https://dashboard.stripe.com/register" target="_blank" rel="noreferrer" style={{ color: "#635bff", fontWeight: 600 }}>stripe.com ↗</a>
+                  <a href="https://www.mercadopago.com.br" target="_blank" rel="noreferrer" style={{ color: "#009ee3", fontWeight: 600 }}>mercadopago.com.br ↗</a>
                   {" "}e crie sua conta gratuitamente. Se já tiver, pule este passo.
                 </p>
               </div>
@@ -276,46 +293,154 @@ export default function ProductsPage() {
 
             {/* Step 2 */}
             <div style={{ display: "flex", gap: "16px" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#635bff", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 800, flexShrink: 0 }}>2</div>
-                <div style={{ width: "2px", flex: 1, background: "var(--gray-200)", margin: "4px 0" }} />
-              </div>
+              <MPStepNumber n={2} />
               <div style={{ paddingBottom: "20px", flex: 1 }}>
-                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Copie sua Chave Secreta</p>
-                <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "10px" }}>
-                  No Stripe Dashboard → menu esquerdo →{" "}
-                  <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" style={{ color: "#635bff", fontWeight: 600 }}>Developers → API Keys ↗</a>
-                  {" "}→ copie a <strong>Secret key</strong> (começa com <code style={{ background: "var(--gray-100)", padding: "1px 5px", borderRadius: "4px", fontSize: "12px" }}>sk_live_</code>).
+                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Crie uma aplicação no painel de desenvolvedores</p>
+                <p style={{ color: "var(--gray-500)", fontSize: "13px" }}>
+                  Acesse{" "}
+                  <a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" style={{ color: "#009ee3", fontWeight: 600 }}>Mercado Pago Developers ↗</a>
+                  {" "}→ clique em <strong>Criar aplicação</strong> → dê um nome (ex: "Minha Loja") → marque a opção <strong>CheckoutPro</strong> → salve.
                 </p>
-                <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <input className="input" type="password" value={stripeKey} onChange={e => setStripeKey(e.target.value)} placeholder="sk_live_..." style={{ flex: 1 }} />
-                      <button
-                        className="btn-primary"
-                        style={{ background: "#635bff" }}
-                        onClick={() => saveSettings({ stripe_secret_key: stripeKey }, setSavingStripe)}
-                        disabled={savingStripe || !stripeKey}
-                      >
-                        <Save size={14} /> {stripeKey ? "Salvar" : "Salvar"}
-                      </button>
-                    </div>
-                    {stripeKey && (
-                      <p style={{ color: "var(--green)", fontSize: "11px", marginTop: "5px", display: "flex", alignItems: "center", gap: "4px" }}>
-                        <CheckCircle size={11} /> Chave preenchida — clique em Salvar
-                      </p>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
 
             {/* Step 3 */}
             <div style={{ display: "flex", gap: "16px" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#635bff", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 800, flexShrink: 0 }}>3</div>
-                <div style={{ width: "2px", flex: 1, background: "var(--gray-200)", margin: "4px 0" }} />
+              <MPStepNumber n={3} />
+              <div style={{ paddingBottom: "20px", flex: 1 }}>
+                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Copie o Access Token de produção</p>
+                <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "10px" }}>
+                  Dentro da aplicação criada → aba <strong>Credenciais de produção</strong> → copie o <strong>Access Token</strong> (começa com <code style={{ background: "var(--gray-100)", padding: "1px 5px", borderRadius: "4px", fontSize: "12px" }}>APP_USR-</code>).
+                </p>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input
+                    className="input" type="password" value={mpToken}
+                    onChange={e => setMpToken(e.target.value)}
+                    placeholder="APP_USR-..." style={{ flex: 1 }}
+                  />
+                  <button
+                    className="btn-primary"
+                    style={{ background: "#009ee3" }}
+                    onClick={() => saveSettings({ mp_access_token: mpToken }, setSavingMP)}
+                    disabled={savingMP || !mpToken}
+                  >
+                    <Save size={14} /> {savingMP ? "Salvando..." : "Salvar"}
+                  </button>
+                </div>
+                {mpToken && (
+                  <p style={{ color: "var(--green)", fontSize: "11px", marginTop: "5px", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <CheckCircle size={11} /> Token preenchido — clique em Salvar
+                  </p>
+                )}
               </div>
+            </div>
+
+            {/* Step 4 */}
+            <div style={{ display: "flex", gap: "16px" }}>
+              <MPStepNumber n={4} />
+              <div style={{ paddingBottom: "20px", flex: 1 }}>
+                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Configure as notificações (webhook)</p>
+                <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "10px" }}>
+                  Ainda na sua aplicação → aba <strong>Notificações Webhooks</strong> → cole a URL abaixo no campo <strong>URL de produção</strong> → marque o tópico <strong>Pagamentos</strong> → salve.
+                </p>
+                <CopyUrlBox
+                  url={MP_WEBHOOK_URL}
+                  copied={copiedMPWebhook}
+                  onCopy={() => copyText(MP_WEBHOOK_URL, setCopiedMPWebhook)}
+                />
+                <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "8px 12px", display: "flex", gap: "7px", alignItems: "flex-start" }}>
+                  <Info size={13} style={{ color: "#d97706", marginTop: "1px", flexShrink: 0 }} />
+                  <p style={{ fontSize: "12px", color: "#92400e", margin: 0 }}>
+                    Esse passo é essencial para o sistema enviar a mensagem automática ao comprador após o pagamento ser aprovado.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 5 — Done */}
+            <div style={{ display: "flex", gap: "16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{
+                  width: "30px", height: "30px", borderRadius: "50%",
+                  background: mpConfigured ? "var(--green)" : "var(--gray-300)",
+                  color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "13px", fontWeight: 800, flexShrink: 0,
+                }}>
+                  {mpConfigured ? <CheckCircle size={15} /> : "5"}
+                </div>
+              </div>
+              <div style={{ paddingBottom: "4px", flex: 1 }}>
+                <p style={{ fontWeight: 700, fontSize: "13px", color: mpConfigured ? "var(--green)" : "var(--gray-400)", marginBottom: "4px" }}>
+                  {mpConfigured ? "✓ Mercado Pago configurado! Cadastre seus produtos abaixo." : "Pronto! Cadastre seus produtos"}
+                </p>
+                <p style={{ color: "var(--gray-500)", fontSize: "13px" }}>
+                  Ao criar um produto aqui, o link de pagamento é gerado automaticamente. Nenhuma ação extra no Mercado Pago.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guia Stripe */}
+      {showStripeGuide && (
+        <div className="card" style={{ padding: "24px", marginBottom: "20px" }}>
+          <h3 style={{ fontSize: "15px", fontWeight: 800, color: "var(--gray-900)", marginBottom: "6px" }}>
+            💜 Como configurar o Stripe
+          </h3>
+
+          <div style={{ background: "rgba(99,91,255,0.06)", border: "1px solid rgba(99,91,255,0.2)", borderRadius: "10px", padding: "12px 14px", marginBottom: "22px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
+            <Zap size={15} style={{ color: "#635bff", marginTop: "1px", flexShrink: 0 }} />
+            <p style={{ color: "#635bff", fontSize: "13px", fontWeight: 500, margin: 0 }}>
+              <strong>Você não precisa criar nada manualmente no Stripe.</strong> Ao cadastrar um produto aqui, o link de pagamento é gerado automaticamente com o valor correto.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {/* Step 1 */}
+            <div style={{ display: "flex", gap: "16px" }}>
+              <StepNumber n={1} />
+              <div style={{ paddingBottom: "20px", flex: 1 }}>
+                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Crie uma conta no Stripe</p>
+                <p style={{ color: "var(--gray-500)", fontSize: "13px" }}>
+                  Acesse{" "}
+                  <a href="https://dashboard.stripe.com/register" target="_blank" rel="noreferrer" style={{ color: "#635bff", fontWeight: 600 }}>stripe.com ↗</a>
+                  {" "}e crie sua conta. Se já tiver, pule este passo.
+                </p>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div style={{ display: "flex", gap: "16px" }}>
+              <StepNumber n={2} />
+              <div style={{ paddingBottom: "20px", flex: 1 }}>
+                <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Copie sua Chave Secreta</p>
+                <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "10px" }}>
+                  No Stripe Dashboard →{" "}
+                  <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noreferrer" style={{ color: "#635bff", fontWeight: 600 }}>Developers → API Keys ↗</a>
+                  {" "}→ copie a <strong>Secret key</strong> (começa com <code style={{ background: "var(--gray-100)", padding: "1px 5px", borderRadius: "4px", fontSize: "12px" }}>sk_live_</code>).
+                </p>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input className="input" type="password" value={stripeKey} onChange={e => setStripeKey(e.target.value)} placeholder="sk_live_..." style={{ flex: 1 }} />
+                  <button
+                    className="btn-primary" style={{ background: "#635bff" }}
+                    onClick={() => saveSettings({ stripe_secret_key: stripeKey }, setSavingStripe)}
+                    disabled={savingStripe || !stripeKey}
+                  >
+                    <Save size={14} /> Salvar
+                  </button>
+                </div>
+                {stripeKey && (
+                  <p style={{ color: "var(--green)", fontSize: "11px", marginTop: "5px", display: "flex", alignItems: "center", gap: "4px" }}>
+                    <CheckCircle size={11} /> Chave preenchida — clique em Salvar
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div style={{ display: "flex", gap: "16px" }}>
+              <StepNumber n={3} />
               <div style={{ paddingBottom: "20px", flex: 1 }}>
                 <p style={{ fontWeight: 700, fontSize: "13px", color: "var(--gray-900)", marginBottom: "4px" }}>Configure o Webhook</p>
                 <p style={{ color: "var(--gray-500)", fontSize: "13px", marginBottom: "10px" }}>
@@ -325,24 +450,15 @@ export default function ProductsPage() {
                   <code style={{ background: "var(--gray-100)", padding: "1px 5px", borderRadius: "4px", fontSize: "12px" }}>checkout.session.completed</code>
                   {" "}→ salve e copie o <strong>Segredo da assinatura</strong> (começa com <code style={{ background: "var(--gray-100)", padding: "1px 5px", borderRadius: "4px", fontSize: "12px" }}>whsec_</code>).
                 </p>
-
-                {/* URL do webhook para copiar */}
-                <div style={{ background: "var(--gray-50)", border: "1px solid var(--gray-200)", borderRadius: "8px", padding: "10px 12px", display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-                  <Webhook size={14} style={{ color: "var(--gray-400)", flexShrink: 0 }} />
-                  <code style={{ flex: 1, fontSize: "12px", color: "var(--gray-700)", wordBreak: "break-all" }}>{WEBHOOK_URL}</code>
-                  <button
-                    onClick={copyWebhook}
-                    style={{ background: copiedWebhook ? "var(--green)" : "#635bff", color: "white", border: "none", borderRadius: "6px", padding: "5px 10px", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px", flexShrink: 0, transition: "background 0.2s" }}
-                  >
-                    {copiedWebhook ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar URL</>}
-                  </button>
-                </div>
-
+                <CopyUrlBox
+                  url={STRIPE_WEBHOOK_URL}
+                  copied={copiedStripeWebhook}
+                  onCopy={() => copyText(STRIPE_WEBHOOK_URL, setCopiedStripeWebhook)}
+                />
                 <div style={{ display: "flex", gap: "8px" }}>
                   <input className="input" type="password" value={stripeWebhookSecret} onChange={e => setStripeWebhookSecret(e.target.value)} placeholder="whsec_..." style={{ flex: 1 }} />
                   <button
-                    className="btn-primary"
-                    style={{ background: "#635bff" }}
+                    className="btn-primary" style={{ background: "#635bff" }}
                     onClick={() => saveSettings({ stripe_webhook_secret: stripeWebhookSecret }, setSavingStripe)}
                     disabled={savingStripe || !stripeWebhookSecret}
                   >
@@ -355,7 +471,12 @@ export default function ProductsPage() {
             {/* Step 4 — Done */}
             <div style={{ display: "flex", gap: "16px" }}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: stripeConfigured ? "var(--green)" : "var(--gray-300)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 800, flexShrink: 0 }}>
+                <div style={{
+                  width: "30px", height: "30px", borderRadius: "50%",
+                  background: stripeConfigured ? "var(--green)" : "var(--gray-300)",
+                  color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "13px", fontWeight: 800, flexShrink: 0,
+                }}>
                   {stripeConfigured ? <CheckCircle size={15} /> : "4"}
                 </div>
               </div>
@@ -364,7 +485,7 @@ export default function ProductsPage() {
                   {stripeConfigured ? "✓ Stripe configurado! Cadastre seus produtos abaixo." : "Pronto! Cadastre seus produtos"}
                 </p>
                 <p style={{ color: "var(--gray-500)", fontSize: "13px" }}>
-                  Ao criar um produto aqui, o link de pagamento Stripe é gerado automaticamente com o valor exato. Nenhuma ação extra necessária no Stripe.
+                  Ao criar um produto aqui, o link de pagamento Stripe é gerado automaticamente. Nenhuma ação extra necessária no Stripe.
                 </p>
               </div>
             </div>
@@ -401,7 +522,7 @@ export default function ProductsPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px", flexWrap: "wrap" }}>
                     <span style={{ color: "var(--gray-900)", fontSize: "15px", fontWeight: 700 }}>{p.name}</span>
                     <span style={{ background: "var(--green-50)", color: "var(--green)", fontSize: "13px", fontWeight: 700, padding: "2px 8px", borderRadius: "6px" }}>{fmt(p.price)}</span>
-                    <span style={{ background: p.payment_provider === "stripe" ? "rgba(99,91,255,0.08)" : "var(--green-50)", color: providerColor(p.payment_provider), fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px" }}>
+                    <span style={{ background: p.payment_provider === "stripe" ? "rgba(99,91,255,0.08)" : "rgba(0,158,227,0.08)", color: providerColor(p.payment_provider), fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px" }}>
                       {providerLabel(p.payment_provider)}
                     </span>
                     <span style={{ background: p.status === "active" ? "var(--green-50)" : "var(--gray-100)", color: p.status === "active" ? "var(--green)" : "var(--gray-400)", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px" }}>
@@ -465,17 +586,18 @@ export default function ProductsPage() {
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Meio de pagamento</label>
                 <div style={{ display: "flex", gap: "8px" }}>
                   {[
-                    { value: "mercadopago", label: "🟢 Mercado Pago", configured: mpConfigured },
-                    { value: "stripe", label: "💜 Stripe", configured: stripeConfigured },
+                    { value: "mercadopago", label: "🟢 Mercado Pago", configured: mpConfigured, color: "#009ee3" },
+                    { value: "stripe", label: "💜 Stripe", configured: stripeConfigured, color: "#635bff" },
                   ].map(opt => (
                     <button
                       key={opt.value}
                       onClick={() => setForm(f => ({ ...f, payment_provider: opt.value }))}
                       style={{
-                        flex: 1, padding: "10px", borderRadius: "8px", border: `2px solid ${form.payment_provider === opt.value ? (opt.value === "stripe" ? "#635bff" : "var(--green)") : "var(--gray-200)"}`,
-                        background: form.payment_provider === opt.value ? (opt.value === "stripe" ? "rgba(99,91,255,0.06)" : "var(--green-50)") : "white",
+                        flex: 1, padding: "10px", borderRadius: "8px",
+                        border: `2px solid ${form.payment_provider === opt.value ? opt.color : "var(--gray-200)"}`,
+                        background: form.payment_provider === opt.value ? `${opt.color}10` : "white",
                         cursor: "pointer", fontSize: "13px", fontWeight: 600,
-                        color: form.payment_provider === opt.value ? (opt.value === "stripe" ? "#635bff" : "var(--green)") : "var(--gray-600)",
+                        color: form.payment_provider === opt.value ? opt.color : "var(--gray-600)",
                         display: "flex", flexDirection: "column", alignItems: "center", gap: "3px",
                       }}
                     >
@@ -490,7 +612,7 @@ export default function ProductsPage() {
                   <div style={{ marginTop: "8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "8px 12px", display: "flex", gap: "7px", alignItems: "flex-start" }}>
                     <Info size={13} style={{ color: "#d97706", marginTop: "1px", flexShrink: 0 }} />
                     <p style={{ fontSize: "12px", color: "#92400e", margin: 0 }}>
-                      Configure o {form.payment_provider === "stripe" ? "Stripe" : "Mercado Pago"} acima antes de criar produtos com este meio de pagamento. O produto será salvo mas o link só será gerado após a configuração.
+                      Configure o {form.payment_provider === "stripe" ? "Stripe" : "Mercado Pago"} antes de criar produtos com este meio de pagamento.
                     </p>
                   </div>
                 )}
@@ -506,8 +628,7 @@ export default function ProductsPage() {
                   {POST_ACTIONS.find(a => a.value === form.post_payment_action)?.label ?? "Conteúdo"}
                 </label>
                 <textarea
-                  className="input"
-                  rows={3}
+                  className="input" rows={3}
                   value={form.post_payment_content}
                   onChange={e => setForm(f => ({ ...f, post_payment_content: e.target.value }))}
                   placeholder={POST_ACTIONS.find(a => a.value === form.post_payment_action)?.placeholder ?? ""}
