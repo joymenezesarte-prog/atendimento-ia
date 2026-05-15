@@ -487,7 +487,7 @@ export default function AgentsPage() {
                     }}>
 {`<script>
   (function(d,t) {
-    var BASE_URL="${process.env.NEXT_PUBLIC_CHATWOOT_URL||'https://chatwoot.atendimentoia.cloud'}";
+    var BASE_URL="${process.env.NEXT_PUBLIC_CHATWOOT_URL||'https://chat.atendimentoia.cloud'}";
     var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
     g.src=BASE_URL+"/packs/js/sdk.js";
     g.defer=true; g.async=true;
@@ -503,7 +503,7 @@ export default function AgentsPage() {
                     </pre>
                     <button
                       onClick={() => {
-                        const base = process.env.NEXT_PUBLIC_CHATWOOT_URL || 'https://chatwoot.atendimentoia.cloud';
+                        const base = process.env.NEXT_PUBLIC_CHATWOOT_URL || 'https://chat.atendimentoia.cloud';
                         const script = `<script>\n  (function(d,t) {\n    var BASE_URL="${base}";\n    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];\n    g.src=BASE_URL+"/packs/js/sdk.js";\n    g.defer=true; g.async=true;\n    s.parentNode.insertBefore(g,s);\n    g.onload=function(){\n      window.chatwootSDK.run({\n        websiteToken: '${editForm.websiteToken}',\n        baseUrl: BASE_URL\n      })\n    }\n  })(document,"script");\n<\/script>`;
                         navigator.clipboard.writeText(script);
                       }}

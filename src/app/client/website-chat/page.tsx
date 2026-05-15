@@ -10,7 +10,7 @@ interface AgentWidget {
 }
 
 function buildScript(token: string): string {
-  const base = process.env.NEXT_PUBLIC_CHATWOOT_URL || "https://chatwoot.atendimentoia.cloud";
+  const base = process.env.NEXT_PUBLIC_CHATWOOT_URL || "https://chat.atendimentoia.cloud";
   return `<script>
   (function(d,t) {
     var BASE_URL="${base}";
