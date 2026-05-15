@@ -309,4 +309,70 @@ export default function ClientsPage() {
                               ? <ToggleRight size={22} style={{ color: "var(--green)" }} />
                               : <ToggleLeft size={22} style={{ color: "var(--gray-300)" }} />
                             }
-                     
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>
+                      Dashboard e Assinatura são sempre visíveis.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Setup WhatsApp (só no cadastro) */}
+              {!editClient && (
+                <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "14px" }}>
+                  <button
+                    onClick={() => setShowWhatsApp(s => !s)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: showWhatsApp ? "12px" : 0 }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Smartphone size={14} style={{ color: "var(--green)" }} />
+                      <p style={{ color: "var(--gray-700)", fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        Configurar WhatsApp Automaticamente
+                      </p>
+                    </div>
+                    {showWhatsApp ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+
+                  {showWhatsApp && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "14px", background: "var(--green-50)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(34,197,94,0.2)" }}>
+                      <p style={{ color: "var(--gray-600)", fontSize: "12px", lineHeight: 1.5 }}>
+                        Preencha para criar a inbox no Chatwoot e o agente automaticamente.
+                      </p>
+                      <div>
+                        <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Número WhatsApp (com DDI)</label>
+                        <input className="input" value={form.whatsappNumber} onChange={e => f("whatsappNumber", e.target.value)} placeholder="+5511999999999" />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Phone Number ID</label>
+                        <input className="input" value={form.metaPhoneNumberId} onChange={e => f("metaPhoneNumberId", e.target.value)} placeholder="Ex: 123456789012345" style={{ fontFamily: "monospace" }} />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", color: "var(--gray-600)", fontSize: "12px", fontWeight: 600, marginBottom: "5px" }}>Nome do Agente IA</label>
+                        <input className="input" value={form.agentName} onChange={e => f("agentName", e.target.value)} placeholder="Ex: Sofia" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px" }}>
+              <button className="btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
+              {!setupResult || setupResult.status === "erro" ? (
+                <button className="btn-primary" onClick={handleSave} disabled={saving || !form.name || !form.email}>
+                  {saving ? "Salvando..." : editClient ? "Salvar Alterações" : "Criar e Configurar"}
+                </button>
+              ) : (
+                <button className="btn-primary" onClick={() => setShowModal(false)}>Fechar</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+  

@@ -165,4 +165,18 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         <header style={{
           height: "64px", borderBottom: "1px solid var(--gray-100)",
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 28px", background: "var(--white)", position: "sticky", top: 0, zIn
+          padding: "0 28px", background: "var(--white)", position: "sticky", top: 0, zIndex: 40,
+        }}>
+          <h1 style={{ color: "var(--gray-900)", fontSize: "16px", fontWeight: 700 }}>
+            {menuItems.find(i => isActive(i.path))?.label || "Dashboard"}
+          </h1>
+          <button className="btn-ghost" style={{ position: "relative" }}>
+            <Bell size={18} />
+            <span style={{ position: "absolute", top: "-2px", right: "-2px", width: "8px", height: "8px", borderRadius: "50%", background: "var(--green)", border: "2px solid var(--white)" }} />
+          </button>
+        </header>
+        <div style={{ padding: "28px" }}>{children}</div>
+      </main>
+    </div>
+  );
+}
