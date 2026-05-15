@@ -49,8 +49,7 @@ const FEATURES: { key: string; label: string; desc: string; config?: { field: st
   {
     key: "feat_scheduling",
     label: "📅 Agendamento (Google Agenda)",
-    desc: "Agenda horários direto no Google Calendar",
-    config: [{ field: "calendar_id", label: "ID do Google Calendar", placeholder: "Ex: seuemail@gmail.com" }],
+    desc: "Agenda horários direto no Google Calendar — conecte acima",
   },
   {
     key: "feat_confirm_presence",
@@ -100,7 +99,7 @@ interface Agent {
   features: Record<string, boolean>;
   feature_config: Record<string, string>;
   chatwoot_inbox_id: number | null;
-  google_refresh_token: string | null;
+  google_connected: boolean;
   google_calendar_id: string | null;
   conversations_count: number;
   leads_count: number;
@@ -123,6 +122,39 @@ export default function AgentsPage() {
   const [showFeatures, setShowFeatures] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
 
+  function showToast(type: "success" | "error", msg: string) {
+    setToast({ type, msg });
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  async function load(selectId?: string) {
+    const [aRes, cRes] = await Promise.all([fetch("/api/admin/agents"), fetch("/api/admin/clients")]);
+    if (aRes.status === 401) { router.push("/login"); return; }
+    const [a, c] = await Promise.all([aRes.json(), cRes.json()]);
+    const agentList: Agent[] = Array.isArray(a) ? a : [];
+    setAgents(agentList);
+    setClients(Array.isArray(c) ? c : []);
+    setLoading(false);
+    // Atualiza selected se ainda estiver aberto
+    const targetId = selectId || selected?.id;
+    if (targetId) {
+      const updated = agentList.find(ag => ag.id === targetId);
+      if (updated) {
+        setSelected(updated);
+        setEditForm({
+          name: updated.name,
+          channel: updated.channel,
+          phone_number: updated.phone_number ?? "",
+          chatwoot_inbox_id: String(updated.chatwoot_inbox_id ?? ""),
+          personality: updated.personality ?? "",
+          instructions: updated.instructions ?? "",
+          features: updated.features ?? {},
+          feature_config: updated.feature_config ?? {},
+        });
+      }
+    }
+  }
+
   // Trata retorno do OAuth Google
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -130,7 +162,7 @@ export default function AgentsPage() {
     const error = params.get('google_error');
     if (success) {
       showToast("success", "Google Agenda conectado com sucesso!");
-      load();
+      load(success);
       router.replace('/admin/agents');
     } else if (error) {
       const msgs: Record<string, string> = {
@@ -149,20 +181,6 @@ export default function AgentsPage() {
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
     personality: string; instructions: string; features: Record<string, boolean>; feature_config: Record<string, string>;
   }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {} });
-
-  function showToast(type: "success" | "error", msg: string) {
-    setToast({ type, msg });
-    setTimeout(() => setToast(null), 3500);
-  }
-
-  async function load() {
-    const [aRes, cRes] = await Promise.all([fetch("/api/admin/agents"), fetch("/api/admin/clients")]);
-    if (aRes.status === 401) { router.push("/login"); return; }
-    const [a, c] = await Promise.all([aRes.json(), cRes.json()]);
-    setAgents(Array.isArray(a) ? a : []);
-    setClients(Array.isArray(c) ? c : []);
-    setLoading(false);
-  }
 
   useEffect(() => { load(); }, []);
 
@@ -211,7 +229,7 @@ export default function AgentsPage() {
         showToast("error", err.error || "Erro ao salvar");
       } else {
         const updated = await res.json();
-        setSelected({ ...selected, ...updated });
+        setSelected(prev => prev ? { ...prev, ...updated } : null);
         setAgents(prev => prev.map(a => a.id === selected.id ? { ...a, ...updated } : a));
         showToast("success", "Agente salvo com sucesso!");
       }
@@ -323,6 +341,7 @@ export default function AgentsPage() {
                     <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>{agent.clients?.company_name ?? "—"}</p>
                     {agent.phone_number && <p style={{ color: "var(--gray-400)", fontSize: "12px" }}>📱 {agent.phone_number}</p>}
                     {activeFeats(agent) > 0 && <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 600 }}>{activeFeats(agent)} funções ativas</p>}
+                    {agent.google_connected && <p style={{ color: "#4285f4", fontSize: "12px", fontWeight: 600 }}>📅 Agenda conectada</p>}
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "16px", flexShrink: 0 }}>
@@ -404,11 +423,11 @@ export default function AgentsPage() {
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
                   Google Agenda
                 </label>
-                {selected?.google_refresh_token ? (
+                {selected?.google_connected ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", background: "var(--green-50)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "8px" }}>
                     <CheckCircle size={16} style={{ color: "var(--green)", flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
-                      <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 700 }}>Conectado</p>
+                      <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 700 }}>✓ Conectado</p>
                       <p style={{ color: "var(--gray-500)", fontSize: "11px" }}>{selected.google_calendar_id || "Calendário primário"}</p>
                     </div>
                     <a
