@@ -69,16 +69,7 @@ const FEATURES: { key: string; label: string; desc: string; config?: { field: st
     desc: "Envia instruções antes do compromisso",
     config: [{ field: "pre_instructions_text", label: "Texto das instruções", placeholder: "Ex: Traga seu RG e chegue 10 min antes..." }],
   },
-  {
-    key: "feat_payment_links",
-    label: "💰 Emitir Links de Pagamento",
-    desc: "Gera e envia links de pagamento (Pix, MP, Stripe)",
-    config: [
-      { field: "payment_pix_key", label: "Chave Pix", placeholder: "CPF, CNPJ, email ou chave aleatória" },
-      { field: "payment_mp_token", label: "Token Mercado Pago (opcional)", placeholder: "APP_USR-..." },
-      { field: "payment_stripe_key", label: "Stripe Secret Key (opcional)", placeholder: "sk_live_..." },
-    ],
-  },
+
   {
     key: "feat_post_sale",
     label: "🌟 Pós-Venda",
