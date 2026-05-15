@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Bot, Phone, AtSign, Globe, X, Trash2, Save, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Calendar, Link2, RefreshCw, Copy } from "lucide-react";
+import { Plus, Bot, Phone, AtSign, Globe, X, Trash2, Save, ChevronDown, ChevronUp, CheckCircle, AlertCircle, Calendar, Link2, RefreshCw, Copy, FileText } from "lucide-react";
 
 const CHANNELS = [
   { id: "whatsapp", label: "WhatsApp", icon: Phone },
@@ -123,6 +123,7 @@ export default function AgentsPage() {
   const [saving, setSaving] = useState(false);
   const [showFeatures, setShowFeatures] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
 
   function showToast(type: "success" | "error", msg: string) {
     setToast({ type, msg });
@@ -546,6 +547,64 @@ export default function AgentsPage() {
                 <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "5px" }}>
                   Chatwoot → Configurações → Caixas de entrada → Instagram → ID
                 </p>
+              </div>
+
+
+              {/* Formulários / Webhook */}
+              <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
+                  Formulários & Webhook
+                </label>
+                <div style={{ padding: "10px 14px", background: "var(--gray-50)", borderRadius: "8px", border: "1px solid var(--gray-200)" }}>
+                  <p style={{ color: "var(--gray-500)", fontSize: "11px", marginBottom: "6px" }}>URL do Webhook (cole no formulário do site, Google Forms ou Sheets):</p>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <code style={{ flex: 1, fontSize: "10px", color: "var(--gray-700)", background: "white", padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--gray-200)", wordBreak: "break-all" }}>
+                      {`${process.env.NEXT_PUBLIC_SITE_URL || "https://app.atendimentoia.cloud"}/api/webhooks/form/${selected?.id}`}
+                    </code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || "https://app.atendimentoia.cloud"}/api/webhooks/form/${selected?.id}`);
+                        setCopiedWebhook(true);
+                        setTimeout(() => setCopiedWebhook(false), 2000);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: "4px", padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: copiedWebhook ? "var(--green)" : "white", color: copiedWebhook ? "white" : "var(--gray-600)", fontSize: "11px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+                    >
+                      <Copy size={11} /> {copiedWebhook ? "Copiado!" : "Copiar"}
+                    </button>
+                  </div>
+                </div>
+                <details style={{ marginTop: "8px" }}>
+                  <summary style={{ color: "var(--green)", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
+                    📋 Ver script para Google Sheets / Google Forms
+                  </summary>
+                  <pre style={{ marginTop: "8px", background: "var(--gray-900)", color: "#e2e8f0", padding: "12px", borderRadius: "8px", fontSize: "10px", lineHeight: "1.5", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+{`// Cole este script no Google Sheets:
+// Extensões → Apps Script → Novo → Cole o código → Salvar
+// Depois: Adicionar acionador → onFormSubmit → Salvar
+
+function onFormSubmit(e) {
+  var WEBHOOK_URL = "${process.env.NEXT_PUBLIC_SITE_URL || "https://app.atendimentoia.cloud"}/api/webhooks/form/${selected?.id}";
+  var data = {};
+  if (e && e.namedValues) {
+    for (var key in e.namedValues) {
+      data[key] = e.namedValues[key][0];
+    }
+  } else if (e && e.range) {
+    var sheet = e.range.getSheet();
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var values = e.range.getValues()[0];
+    headers.forEach(function(h, i) { data[h] = values[i]; });
+  }
+  data._source = "sheets";
+  UrlFetchApp.fetch(WEBHOOK_URL, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  });
+}`}
+                  </pre>
+                </details>
               </div>
 
 
