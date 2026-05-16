@@ -110,8 +110,29 @@ interface Agent {
 }
 
 interface Client { id: string; company_name: string; }
+interface ChaiwootInbox { id: number; name: string; channel_type: string; }
 
 type Toast = { type: "success" | "error"; msg: string } | null;
+
+function buildEmbedScript(token: string): string {
+  return [
+    "<script>",
+    "  (function(d,t) {",
+    '    var BASE_URL="https://chat.atendimentoia.cloud";',
+    "    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];",
+    '    g.src=BASE_URL+"/packs/js/sdk.js";',
+    "    g.defer=true; g.async=true;",
+    "    s.parentNode.insertBefore(g,s);",
+    "    g.onload=function(){",
+    "      window.chatwootSDK.run({",
+    "        websiteToken: '" + token + "',",
+    "        baseUrl: BASE_URL",
+    "      })",
+    "    }",
+    "  })(document,\"script\");",
+    "<\/script>",
+  ].join("\n");
+}
 
 export default function AgentsPage() {
   const router = useRouter();
@@ -124,6 +145,11 @@ export default function AgentsPage() {
   const [showFeatures, setShowFeatures] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [copiedScript, setCopiedScript] = useState(false);
+  const [creatingWidget, setCreatingWidget] = useState(false);
+  const [chatwootInboxes, setChatwootInboxes] = useState<ChaiwootInbox[]>([]);
+  const [loadingInboxes, setLoadingInboxes] = useState(false);
+  const [inboxesLoaded, setInboxesLoaded] = useState(false);
 
   function showToast(type: "success" | "error", msg: string) {
     setToast({ type, msg });
@@ -138,7 +164,6 @@ export default function AgentsPage() {
     setAgents(agentList);
     setClients(Array.isArray(c) ? c : []);
     setLoading(false);
-    // Atualiza selected se ainda estiver aberto
     const targetId = selectId || selected?.id;
     if (targetId) {
       const updated = agentList.find(ag => ag.id === targetId);
@@ -153,22 +178,20 @@ export default function AgentsPage() {
           instructions: updated.instructions ?? "",
           features: updated.features ?? {},
           feature_config: updated.feature_config ?? {},
-          websiteToken: updated.chatwoot_website_token ?? "",
           instagramInboxId: String(updated.chatwoot_instagram_inbox_id ?? ""),
         });
       }
     }
   }
 
-  // Trata retorno do OAuth Google
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const success = params.get('google_success');
-    const error = params.get('google_error');
+    const success = params.get("google_success");
+    const error = params.get("google_error");
     if (success) {
       showToast("success", "Google Agenda conectado com sucesso!");
       load(success);
-      router.replace('/admin/agents');
+      router.replace("/admin/agents");
     } else if (error) {
       const msgs: Record<string, string> = {
         no_refresh_token: "Token não retornado — tente novamente",
@@ -176,21 +199,24 @@ export default function AgentsPage() {
         db_error: "Erro ao salvar token no banco",
         access_denied: "Acesso negado pelo Google",
       };
-      showToast("error", msgs[error] || `Erro: ${error}`);
-      router.replace('/admin/agents');
+      showToast("error", msgs[error] || "Erro: " + error);
+      router.replace("/admin/agents");
     }
   }, []);
 
   const [form, setForm] = useState({ clientId: "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "" });
   const [editForm, setEditForm] = useState<{
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
-    personality: string; instructions: string; features: Record<string, boolean>; feature_config: Record<string, string>; websiteToken: string; instagramInboxId: string;
-  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {}, websiteToken: "", instagramInboxId: "" });
+    personality: string; instructions: string; features: Record<string, boolean>;
+    feature_config: Record<string, string>; instagramInboxId: string;
+  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {}, instagramInboxId: "" });
 
   useEffect(() => { load(); }, []);
 
   function selectAgent(agent: Agent) {
     setSelected(agent);
+    setInboxesLoaded(false);
+    setChatwootInboxes([]);
     setEditForm({
       name: agent.name,
       channel: agent.channel,
@@ -200,7 +226,6 @@ export default function AgentsPage() {
       instructions: agent.instructions ?? "",
       features: agent.features ?? {},
       feature_config: agent.feature_config ?? {},
-      websiteToken: agent.chatwoot_website_token ?? "",
       instagramInboxId: String(agent.chatwoot_instagram_inbox_id ?? ""),
     });
   }
@@ -217,7 +242,7 @@ export default function AgentsPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/agents/${selected.id}`, {
+      const res = await fetch("/api/admin/agents/" + selected.id, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -229,7 +254,6 @@ export default function AgentsPage() {
           instructions: editForm.instructions || null,
           features: editForm.features,
           feature_config: editForm.feature_config,
-          chatwoot_website_token: editForm.websiteToken || null,
           chatwoot_instagram_inbox_id: editForm.instagramInboxId ? parseInt(editForm.instagramInboxId) : null,
         }),
       });
@@ -249,9 +273,46 @@ export default function AgentsPage() {
     }
   }
 
+  async function createWidget() {
+    if (!selected) return;
+    setCreatingWidget(true);
+    try {
+      const res = await fetch("/api/admin/agents/" + selected.id + "/create-widget", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", data.error || "Erro ao criar widget");
+      } else {
+        showToast("success", data.already_existed ? "Widget já existia — token carregado!" : "Widget criado com sucesso!");
+        load(selected.id);
+      }
+    } catch {
+      showToast("error", "Erro de conexão");
+    } finally {
+      setCreatingWidget(false);
+    }
+  }
+
+  async function loadChatwootInboxes() {
+    setLoadingInboxes(true);
+    try {
+      const res = await fetch("/api/admin/chatwoot/inboxes");
+      if (res.ok) {
+        const data = await res.json();
+        setChatwootInboxes(Array.isArray(data) ? data : []);
+        setInboxesLoaded(true);
+      } else {
+        showToast("error", "Erro ao buscar inboxes do Chatwoot");
+      }
+    } catch {
+      showToast("error", "Erro de conexão");
+    } finally {
+      setLoadingInboxes(false);
+    }
+  }
+
   async function toggleStatus(agent: Agent) {
     const newStatus = agent.status === "active" ? "inactive" : "active";
-    await fetch(`/api/admin/agents/${agent.id}`, {
+    await fetch("/api/admin/agents/" + agent.id, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus }),
@@ -262,7 +323,7 @@ export default function AgentsPage() {
 
   async function deleteAgent(id: string) {
     if (!confirm("Remover este agente?")) return;
-    await fetch(`/api/admin/agents/${id}`, { method: "DELETE" });
+    await fetch("/api/admin/agents/" + id, { method: "DELETE" });
     setAgents(prev => prev.filter(a => a.id !== id));
     if (selected?.id === id) setSelected(null);
   }
@@ -294,11 +355,16 @@ export default function AgentsPage() {
   const channelIcon = (ch: string) => { const c = CHANNELS.find(x => x.id === ch); return c ? <c.icon size={13} /> : null; };
   const activeFeats = (agent: Agent) => Object.values(agent.features ?? {}).filter(Boolean).length;
 
+  const instagramInboxes = chatwootInboxes.filter(i =>
+    i.channel_type === "Channel::Instagram" ||
+    i.channel_type === "Channel::Instagramdm" ||
+    i.name.toLowerCase().includes("instagram")
+  );
+
   if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: "60px" }}><div className="spinner" /></div>;
 
   return (
     <div>
-      {/* Toast */}
       {toast && (
         <div style={{
           position: "fixed", top: "20px", right: "20px", zIndex: 999,
@@ -402,12 +468,48 @@ export default function AgentsPage() {
                 </div>
               </div>
 
+              {/* Inbox Chatwoot (WhatsApp) — dropdown automático */}
               <div>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>
-                  ID Inbox Chatwoot
-                  <span style={{ color: "var(--green)", marginLeft: "6px", fontSize: "10px", fontWeight: 400, textTransform: "none" }}>Chatwoot → Configurações → Caixas de entrada → ID</span>
+                  Inbox WhatsApp (Chatwoot)
                 </label>
-                <input className="input" type="number" value={editForm.chatwoot_inbox_id} onChange={e => setEditForm(f => ({ ...f, chatwoot_inbox_id: e.target.value }))} placeholder="Ex: 1" />
+                {inboxesLoaded ? (
+                  <div>
+                    <select
+                      className="input"
+                      value={editForm.chatwoot_inbox_id}
+                      onChange={e => setEditForm(f => ({ ...f, chatwoot_inbox_id: e.target.value }))}
+                    >
+                      <option value="">— Selecione a inbox do WhatsApp —</option>
+                      {chatwootInboxes
+                        .filter(i => !i.channel_type.toLowerCase().includes("instagram"))
+                        .map(i => (
+                          <option key={i.id} value={String(i.id)}>{i.name} (ID: {i.id})</option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={loadChatwootInboxes}
+                      style={{ marginTop: "5px", display: "flex", alignItems: "center", gap: "4px", background: "none", border: "none", color: "var(--gray-400)", fontSize: "11px", cursor: "pointer", padding: 0 }}
+                    >
+                      <RefreshCw size={10} /> Atualizar lista
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={loadChatwootInboxes}
+                    disabled={loadingInboxes}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                      padding: "10px 14px", background: "white", border: "2px dashed var(--gray-200)",
+                      borderRadius: "8px", cursor: loadingInboxes ? "not-allowed" : "pointer",
+                      color: "var(--gray-600)", fontSize: "13px", fontWeight: 600,
+                    }}
+                  >
+                    <Phone size={14} style={{ color: "var(--green)" }} />
+                    {loadingInboxes ? "Buscando inboxes..." : (editForm.chatwoot_inbox_id ? "Inbox #" + editForm.chatwoot_inbox_id + " — clique para trocar" : "Selecionar Inbox do WhatsApp")}
+                    {!loadingInboxes && <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--gray-400)" }}>automático ✨</span>}
+                  </button>
+                )}
               </div>
 
               <div>
@@ -432,7 +534,7 @@ export default function AgentsPage() {
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
                   Google Agenda
                 </label>
-                {selected?.google_connected ? (
+                {selected.google_connected ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", background: "var(--green-50)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "8px" }}>
                     <CheckCircle size={16} style={{ color: "var(--green)", flexShrink: 0 }} />
                     <div style={{ flex: 1 }}>
@@ -440,7 +542,7 @@ export default function AgentsPage() {
                       <p style={{ color: "var(--gray-500)", fontSize: "11px" }}>{selected.google_calendar_id || "Calendário primário"}</p>
                     </div>
                     <a
-                      href={`/api/admin/google/auth?agent_id=${selected.id}`}
+                      href={"/api/admin/google/auth?agent_id=" + selected.id}
                       style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", textDecoration: "none", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white" }}
                     >
                       <RefreshCw size={11} /> Reconectar
@@ -448,12 +550,11 @@ export default function AgentsPage() {
                   </div>
                 ) : (
                   <a
-                    href={`/api/admin/google/auth?agent_id=${selected?.id}`}
+                    href={"/api/admin/google/auth?agent_id=" + selected.id}
                     style={{
                       display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px",
                       background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px",
                       textDecoration: "none", color: "var(--gray-700)", fontSize: "13px", fontWeight: 600,
-                      transition: "all 0.15s", cursor: "pointer",
                     }}
                   >
                     <Calendar size={15} style={{ color: "#4285f4" }} />
@@ -466,104 +567,131 @@ export default function AgentsPage() {
                 </p>
               </div>
 
-
               {/* Chat no Site */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
                   Chat no Site (Widget)
                 </label>
-                <input
-                  className="input"
-                  value={editForm.websiteToken}
-                  onChange={e => setEditForm(f => ({ ...f, websiteToken: e.target.value }))}
-                  placeholder="Token do website inbox do Chatwoot"
-                  style={{ fontFamily: "monospace", fontSize: "12px" }}
-                />
-                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "5px" }}>
-                  Chatwoot → Configurações → Caixas de entrada → Website → Configurações → Token
-                </p>
-                {editForm.websiteToken && (
-                  <div style={{ marginTop: "10px", position: "relative" }}>
-                    <pre style={{
-                      background: "var(--gray-900)", color: "#e2e8f0",
-                      padding: "12px", borderRadius: "var(--radius-sm)",
-                      fontSize: "10px", lineHeight: "1.5", overflow: "auto",
-                      margin: 0, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all",
-                    }}>
-{`<script>
-  (function(d,t) {
-    var BASE_URL="${process.env.NEXT_PUBLIC_CHATWOOT_URL||'https://chat.atendimentoia.cloud'}";
-    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
-    g.src=BASE_URL+"/packs/js/sdk.js";
-    g.defer=true; g.async=true;
-    s.parentNode.insertBefore(g,s);
-    g.onload=function(){
-      window.chatwootSDK.run({
-        websiteToken: '${editForm.websiteToken}',
-        baseUrl: BASE_URL
-      })
-    }
-  })(document,"script");
-</script>`}
-                    </pre>
-                    <button
-                      onClick={() => {
-                        const base = process.env.NEXT_PUBLIC_CHATWOOT_URL || 'https://chat.atendimentoia.cloud';
-                        const script = `<script>\n  (function(d,t) {\n    var BASE_URL="${base}";\n    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];\n    g.src=BASE_URL+"/packs/js/sdk.js";\n    g.defer=true; g.async=true;\n    s.parentNode.insertBefore(g,s);\n    g.onload=function(){\n      window.chatwootSDK.run({\n        websiteToken: '${editForm.websiteToken}',\n        baseUrl: BASE_URL\n      })\n    }\n  })(document,"script");\n<\/script>`;
-                        navigator.clipboard.writeText(script);
-                      }}
-                      style={{
-                        position: "absolute", top: "8px", right: "8px",
-                        display: "flex", alignItems: "center", gap: "4px",
-                        background: "rgba(255,255,255,0.1)", color: "white",
-                        border: "none", borderRadius: "5px", padding: "4px 8px",
-                        fontSize: "10px", fontWeight: 600, cursor: "pointer",
-                      }}
-                    >
-                      <Copy size={10} /> Copiar
-                    </button>
+                {selected.chatwoot_website_token ? (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", background: "var(--green-50)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "8px", marginBottom: "10px" }}>
+                      <CheckCircle size={16} style={{ color: "var(--green)", flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 700 }}>✓ Widget criado</p>
+                        <p style={{ color: "var(--gray-500)", fontSize: "11px", fontFamily: "monospace" }}>{selected.chatwoot_website_token}</p>
+                      </div>
+                      <button
+                        onClick={createWidget}
+                        disabled={creatingWidget}
+                        style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white", cursor: "pointer" }}
+                      >
+                        <RefreshCw size={11} /> Recriar
+                      </button>
+                    </div>
+                    <div style={{ position: "relative" }}>
+                      <pre style={{
+                        background: "var(--gray-900)", color: "#e2e8f0",
+                        padding: "12px", borderRadius: "var(--radius-sm)",
+                        fontSize: "10px", lineHeight: "1.5", overflow: "auto",
+                        margin: 0, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                      }}>
+                        {buildEmbedScript(selected.chatwoot_website_token)}
+                      </pre>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(buildEmbedScript(selected.chatwoot_website_token!));
+                          setCopiedScript(true);
+                          setTimeout(() => setCopiedScript(false), 2000);
+                        }}
+                        style={{
+                          position: "absolute", top: "8px", right: "8px",
+                          display: "flex", alignItems: "center", gap: "4px",
+                          background: copiedScript ? "var(--green)" : "rgba(255,255,255,0.15)",
+                          color: "white", border: "none", borderRadius: "5px",
+                          padding: "4px 8px", fontSize: "10px", fontWeight: 600, cursor: "pointer",
+                        }}
+                      >
+                        <Copy size={10} /> {copiedScript ? "Copiado!" : "Copiar Script"}
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <button
+                    onClick={createWidget}
+                    disabled={creatingWidget}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                      padding: "12px 16px", background: "white", border: "2px dashed var(--gray-200)",
+                      borderRadius: "8px", cursor: creatingWidget ? "not-allowed" : "pointer",
+                      color: "var(--gray-600)", fontSize: "13px", fontWeight: 600,
+                    }}
+                  >
+                    <Globe size={15} style={{ color: "var(--green)" }} />
+                    {creatingWidget ? "Criando widget no Chatwoot..." : "Criar Widget de Chat para o Site"}
+                    {!creatingWidget && <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--gray-400)" }}>automático ✨</span>}
+                  </button>
                 )}
               </div>
 
-              {/* Instagram */}
+              {/* Instagram Direct */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
                   Instagram Direct
                 </label>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", padding: "8px 12px", background: "linear-gradient(135deg, rgba(131,58,180,0.08), rgba(252,180,69,0.08))", borderRadius: "8px", border: "1px solid rgba(131,58,180,0.15)" }}>
-                  <span style={{ fontSize: "14px" }}>📸</span>
-                  <p style={{ color: "var(--gray-600)", fontSize: "12px" }}>
-                    Crie uma inbox do tipo <strong>Instagram</strong> no Chatwoot e cole o ID abaixo.
-                  </p>
-                </div>
-                <input
-                  className="input"
-                  type="number"
-                  value={editForm.instagramInboxId}
-                  onChange={e => setEditForm(f => ({ ...f, instagramInboxId: e.target.value }))}
-                  placeholder="ID da inbox Instagram no Chatwoot"
-                />
-                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "5px" }}>
-                  Chatwoot → Configurações → Caixas de entrada → Instagram → ID
-                </p>
+                {inboxesLoaded ? (
+                  <div>
+                    <select
+                      className="input"
+                      value={editForm.instagramInboxId}
+                      onChange={e => setEditForm(f => ({ ...f, instagramInboxId: e.target.value }))}
+                    >
+                      <option value="">— Selecione a inbox do Instagram —</option>
+                      {instagramInboxes.map(i => (
+                        <option key={i.id} value={String(i.id)}>{i.name} (ID: {i.id})</option>
+                      ))}
+                      {instagramInboxes.length === 0 && (
+                        <option disabled>Nenhuma inbox Instagram encontrada no Chatwoot</option>
+                      )}
+                    </select>
+                    {selected.chatwoot_instagram_inbox_id && (
+                      <p style={{ color: "var(--green)", fontSize: "11px", marginTop: "4px", fontWeight: 600 }}>
+                        {"✓ Inbox #" + selected.chatwoot_instagram_inbox_id + " selecionada"}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={loadChatwootInboxes}
+                    disabled={loadingInboxes}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "8px", width: "100%",
+                      padding: "12px 16px", background: "white", border: "2px dashed var(--gray-200)",
+                      borderRadius: "8px", cursor: loadingInboxes ? "not-allowed" : "pointer",
+                      color: "var(--gray-600)", fontSize: "13px", fontWeight: 600,
+                    }}
+                  >
+                    <AtSign size={15} style={{ color: "#833ab4" }} />
+                    {loadingInboxes ? "Buscando inboxes do Chatwoot..." : (selected.chatwoot_instagram_inbox_id ? "Inbox #" + selected.chatwoot_instagram_inbox_id + " — clique para trocar" : "Selecionar Inbox do Instagram")}
+                    {!loadingInboxes && <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--gray-400)" }}>automático ✨</span>}
+                  </button>
+                )}
               </div>
-
 
               {/* Formulários / Webhook */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
-                  Formulários & Webhook
+                  <FileText size={12} style={{ display: "inline", marginRight: "5px" }} />
+                  Formulários {"&"} Webhook
                 </label>
                 <div style={{ padding: "10px 14px", background: "var(--gray-50)", borderRadius: "8px", border: "1px solid var(--gray-200)" }}>
                   <p style={{ color: "var(--gray-500)", fontSize: "11px", marginBottom: "6px" }}>URL do Webhook (cole no formulário do site, Google Forms ou Sheets):</p>
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     <code style={{ flex: 1, fontSize: "10px", color: "var(--gray-700)", background: "white", padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--gray-200)", wordBreak: "break-all" }}>
-                      {`${process.env.NEXT_PUBLIC_SITE_URL || "https://app.atendimentoia.cloud"}/api/webhooks/form/${selected?.id}`}
+                      {"https://app.atendimentoia.cloud/api/webhooks/form/" + selected.id}
                     </code>
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_SITE_URL || "https://app.atendimentoia.cloud"}/api/webhooks/form/${selected?.id}`);
+                        navigator.clipboard.writeText("https://app.atendimentoia.cloud/api/webhooks/form/" + selected.id);
                         setCopiedWebhook(true);
                         setTimeout(() => setCopiedWebhook(false), 2000);
                       }}
@@ -573,40 +701,7 @@ export default function AgentsPage() {
                     </button>
                   </div>
                 </div>
-                <details style={{ marginTop: "8px" }}>
-                  <summary style={{ color: "var(--green)", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}>
-                    📋 Ver script para Google Sheets / Google Forms
-                  </summary>
-                  <pre style={{ marginTop: "8px", background: "var(--gray-900)", color: "#e2e8f0", padding: "12px", borderRadius: "8px", fontSize: "10px", lineHeight: "1.5", overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-{`// Cole este script no Google Sheets:
-// Extensões → Apps Script → Novo → Cole o código → Salvar
-// Depois: Adicionar acionador → onFormSubmit → Salvar
-
-function onFormSubmit(e) {
-  var WEBHOOK_URL = "${process.env.NEXT_PUBLIC_SITE_URL || "https://app.atendimentoia.cloud"}/api/webhooks/form/${selected?.id}";
-  var data = {};
-  if (e && e.namedValues) {
-    for (var key in e.namedValues) {
-      data[key] = e.namedValues[key][0];
-    }
-  } else if (e && e.range) {
-    var sheet = e.range.getSheet();
-    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var values = e.range.getValues()[0];
-    headers.forEach(function(h, i) { data[h] = values[i]; });
-  }
-  data._source = "sheets";
-  UrlFetchApp.fetch(WEBHOOK_URL, {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(data),
-    muteHttpExceptions: true
-  });
-}`}
-                  </pre>
-                </details>
               </div>
-
 
               {/* Feature Toggles */}
               <div style={{ borderTop: "1px solid var(--gray-100)", paddingTop: "13px" }}>
@@ -630,7 +725,7 @@ function onFormSubmit(e) {
                             display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px",
                             borderRadius: "var(--radius-sm)", cursor: "pointer",
                             background: editForm.features[feat.key] ? "var(--green-50)" : "var(--gray-50)",
-                            border: `1px solid ${editForm.features[feat.key] ? "rgba(34,197,94,0.25)" : "var(--gray-100)"}`,
+                            border: "1px solid " + (editForm.features[feat.key] ? "rgba(34,197,94,0.25)" : "var(--gray-100)"),
                             transition: "all 0.15s",
                           }}
                         >
@@ -727,3 +822,4 @@ function onFormSubmit(e) {
     </div>
   );
 }
+                
