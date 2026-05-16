@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, getSupabaseAdmin } from '@/lib/supabase-admin'
 
-export async function POST(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin()
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
   const db = getSupabaseAdmin()
+  const body = await request.json().catch(() => ({}))
+  const force = body?.force === true
 
   // Buscar dados do agente
   const { data: agent, error: agentErr } = await db
@@ -17,8 +19,8 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
 
   if (agentErr || !agent) return NextResponse.json({ error: 'Agente não encontrado' }, { status: 404 })
 
-  // Se já tem token, retornar o existente
-  if (agent.chatwoot_website_token) {
+  // Se já tem token e não é force, retornar o existente
+  if (agent.chatwoot_website_token && !force) {
     return NextResponse.json({ website_token: agent.chatwoot_website_token, already_existed: true })
   }
 
