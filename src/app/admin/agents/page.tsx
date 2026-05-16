@@ -151,6 +151,7 @@ export default function AgentsPage() {
   const [chatwootInboxes, setChatwootInboxes] = useState<ChaiwootInbox[]>([]);
   const [loadingInboxes, setLoadingInboxes] = useState(false);
   const [inboxesLoaded, setInboxesLoaded] = useState(false);
+  const [connectingInstagram, setConnectingInstagram] = useState(false);
 
   function showToast(type: "success" | "error", msg: string) {
     setToast({ type, msg });
@@ -310,6 +311,69 @@ export default function AgentsPage() {
     } finally {
       setCreatingInbox(false);
     }
+  }
+
+  async function connectInstagram() {
+    if (!selected) return;
+    setConnectingInstagram(true);
+
+    // Buscar URL e account_id do Chatwoot
+    const cfgRes = await fetch("/api/admin/chatwoot/config");
+    if (!cfgRes.ok) { showToast("error", "Erro ao buscar config do Chatwoot"); setConnectingInstagram(false); return; }
+    const { url: chatwootUrl, account_id } = await cfgRes.json();
+
+    // Snapshot das inboxes ANTES de abrir o popup
+    const beforeRes = await fetch("/api/admin/chatwoot/inboxes");
+    const beforeInboxes: ChaiwootInbox[] = beforeRes.ok ? await beforeRes.json() : [];
+    const beforeIds = new Set(beforeInboxes.map((i: ChaiwootInbox) => i.id));
+
+    // Abrir popup do Chatwoot na tela de nova inbox Instagram
+    const popupUrl = chatwootUrl + "/app/accounts/" + account_id + "/settings/inboxes/new/instagram";
+    const popup = window.open(popupUrl, "instagram-connect", "width=900,height=650,scrollbars=yes,resizable=yes");
+
+    if (!popup) {
+      showToast("error", "Popup bloqueado — permita popups para este site");
+      setConnectingInstagram(false);
+      return;
+    }
+
+    // Aguardar popup fechar e detectar nova inbox
+    const timer = setInterval(async () => {
+      if (popup.closed) {
+        clearInterval(timer);
+        setConnectingInstagram(false);
+
+        // Buscar inboxes DEPOIS do popup fechar
+        const afterRes = await fetch("/api/admin/chatwoot/inboxes");
+        if (!afterRes.ok) return;
+        const afterInboxes: ChaiwootInbox[] = await afterRes.json();
+
+        // Encontrar inboxes novas de Instagram
+        const newInstagram = afterInboxes.filter(
+          i => !beforeIds.has(i.id) && (
+            i.channel_type === "Channel::Instagram" ||
+            i.channel_type === "Channel::Instagramdm" ||
+            i.name.toLowerCase().includes("instagram")
+          )
+        );
+
+        if (newInstagram.length > 0) {
+          const inbox = newInstagram[0];
+          // Salvar automaticamente no agente
+          const saveRes = await fetch("/api/admin/agents/" + selected.id, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chatwoot_instagram_inbox_id: inbox.id }),
+          });
+          if (saveRes.ok) {
+            showToast("success", "Instagram conectado! Inbox: " + inbox.name);
+            load(selected.id);
+          }
+        } else {
+          showToast("error", "Nenhuma inbox Instagram nova detectada — tente novamente");
+        }
+      }
+    }, 800);
   }
 
   async function loadChatwootInboxes() {
@@ -652,43 +716,40 @@ export default function AgentsPage() {
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "8px" }}>
                   Instagram Direct
                 </label>
-                {inboxesLoaded ? (
-                  <div>
-                    <select
-                      className="input"
-                      value={editForm.instagramInboxId}
-                      onChange={e => setEditForm(f => ({ ...f, instagramInboxId: e.target.value }))}
+                {selected.chatwoot_instagram_inbox_id ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", background: "linear-gradient(135deg, rgba(131,58,180,0.08), rgba(252,180,69,0.08))", border: "1px solid rgba(131,58,180,0.25)", borderRadius: "8px" }}>
+                    <CheckCircle size={16} style={{ color: "#833ab4", flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <p style={{ color: "#833ab4", fontSize: "12px", fontWeight: 700 }}>{"✓ Conectado"}</p>
+                      <p style={{ color: "var(--gray-500)", fontSize: "11px" }}>{"Inbox #" + selected.chatwoot_instagram_inbox_id}</p>
+                    </div>
+                    <button
+                      onClick={connectInstagram}
+                      disabled={connectingInstagram}
+                      style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white", cursor: "pointer" }}
                     >
-                      <option value="">— Selecione a inbox do Instagram —</option>
-                      {instagramInboxes.map(i => (
-                        <option key={i.id} value={String(i.id)}>{i.name} (ID: {i.id})</option>
-                      ))}
-                      {instagramInboxes.length === 0 && (
-                        <option disabled>Nenhuma inbox Instagram encontrada no Chatwoot</option>
-                      )}
-                    </select>
-                    {selected.chatwoot_instagram_inbox_id && (
-                      <p style={{ color: "var(--green)", fontSize: "11px", marginTop: "4px", fontWeight: 600 }}>
-                        {"✓ Inbox #" + selected.chatwoot_instagram_inbox_id + " selecionada"}
-                      </p>
-                    )}
+                      <RefreshCw size={11} /> Reconectar
+                    </button>
                   </div>
                 ) : (
                   <button
-                    onClick={loadChatwootInboxes}
-                    disabled={loadingInboxes}
+                    onClick={connectInstagram}
+                    disabled={connectingInstagram}
                     style={{
-                      display: "flex", alignItems: "center", gap: "8px", width: "100%",
-                      padding: "12px 16px", background: "white", border: "2px dashed var(--gray-200)",
-                      borderRadius: "8px", cursor: loadingInboxes ? "not-allowed" : "pointer",
-                      color: "var(--gray-600)", fontSize: "13px", fontWeight: 600,
+                      display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px",
+                      background: "white", border: "1px solid var(--gray-200)", borderRadius: "8px",
+                      width: "100%", cursor: connectingInstagram ? "not-allowed" : "pointer",
+                      color: "var(--gray-700)", fontSize: "13px", fontWeight: 600,
                     }}
                   >
                     <AtSign size={15} style={{ color: "#833ab4" }} />
-                    {loadingInboxes ? "Buscando inboxes do Chatwoot..." : (selected.chatwoot_instagram_inbox_id ? "Inbox #" + selected.chatwoot_instagram_inbox_id + " — clique para trocar" : "Selecionar Inbox do Instagram")}
-                    {!loadingInboxes && <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--gray-400)" }}>automático ✨</span>}
+                    <span>{connectingInstagram ? "Aguardando conexao..." : "Conectar Instagram do cliente"}</span>
+                    <Link2 size={13} style={{ color: "var(--gray-400)", marginLeft: "auto" }} />
                   </button>
                 )}
+                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "6px" }}>
+                  Abre uma janela do Chatwoot para conectar a conta do Instagram. Detectado automaticamente ao fechar.
+                </p>
               </div>
 
               {/* Formulários / Webhook */}
@@ -798,29 +859,6 @@ export default function AgentsPage() {
                 <select className="input" value={form.clientId} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}>
                   {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
                 </select>
-              </div>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Nome do Agente</label>
-                <input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Joy Atendente IA" />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <div>
-                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Canal</label>
-                  <select className="input" value={form.channel} onChange={e => setForm(f => ({ ...f, channel: e.target.value }))}>
-                    {CHANNELS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Nº WhatsApp</label>
-                  <input className="input" value={form.phone_number} onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))} placeholder="+5511999..." />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Personalidade</label>
-                <input className="input" value={form.personality} onChange={e => setForm(f => ({ ...f, personality: e.target.value }))} placeholder="Ex: Simpática, profissional, objetiva" />
-              </div>
-              <div>
-                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Instruções Iniciais</label>
               </div>
               <div>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Instrucoes Iniciais</label>
