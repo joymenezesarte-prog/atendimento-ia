@@ -90,9 +90,28 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── 4. Criar agente no Supabase vinculado à inbox ──
+  // ── 4. Criar widget de site no Chatwoot ──
+  let websiteToken: string | null = null
+  if (chatwootUrl && chatwootAcct && chatwootTok) {
+    try {
+      const widgetRes = await fetch(`${chatwootUrl}/api/v1/accounts/${chatwootAcct}/inboxes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'api_access_token': chatwootTok },
+        body: JSON.stringify({
+          name: `Site - ${company_name}`,
+          channel: { type: 'web_widget', website_url: process.env.NEXT_PUBLIC_SITE_URL || 'https://app.atendimentoia.cloud' },
+        }),
+      })
+      if (widgetRes.ok) {
+        const widgetData = await widgetRes.json()
+        websiteToken = widgetData.website_token || null
+      }
+    } catch { /* não bloqueia o cadastro */ }
+  }
+
+  // ── 5. Criar agente no Supabase vinculado à inbox ──
   let agent = null
-  if (client && (inboxId || whatsapp_number)) {
+  if (client) {
     const { data: agentData } = await db
       .from('agents')
       .insert({
@@ -101,6 +120,7 @@ export async function POST(request: NextRequest) {
         channel: 'whatsapp',
         phone_number: whatsapp_number || null,
         chatwoot_inbox_id: inboxId,
+        chatwoot_website_token: websiteToken,
         status: 'active',
         personality: 'profissional, simpático e objetivo',
         instructions: `Você é um assistente de atendimento virtual para ${company_name}. Responda perguntas dos clientes de forma clara e educada.`,
@@ -122,9 +142,9 @@ export async function POST(request: NextRequest) {
         ? 'cliente_criado_sem_chatwoot'
         : 'cliente_criado_sem_whatsapp',
     message: inboxId
-      ? `✅ Cliente criado, inbox WhatsApp #${inboxId} criada no Chatwoot e agente configurado automaticamente.`
+      ? `✅ Cliente criado, inbox WhatsApp #${inboxId} e widget de site criados no Chatwoot.`
       : chatwootError
         ? `⚠️ Cliente criado, mas a inbox do Chatwoot falhou: ${chatwootError}`
-        : '✅ Cliente criado. Adicione o inbox_id manualmente no agente quando configurar o WhatsApp.',
+        : '✅ Cliente criado. Configure o WhatsApp depois pelo painel de agentes.',
   }, { status: 201 })
 }
