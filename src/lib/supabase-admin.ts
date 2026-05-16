@@ -31,18 +31,32 @@ export async function requireAdmin(): Promise<{ userId: string } | null> {
 }
 
 // Verifica se o usuário logado é um cliente válido e retorna os dados do cliente
+// Aceita tanto o dono do cliente quanto funcionários com metadata { role: 'employee', client_id }
 export async function requireClient(): Promise<{ id: string; user_id: string } | null> {
   const supabase = await getSupabaseUser()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
   const db = getSupabaseAdmin()
-  const { data, error } = await db
+
+  // Verifica se é o dono direto
+  const { data: clientByOwner } = await db
     .from('clients')
     .select('id, user_id')
     .eq('user_id', user.id)
     .single()
+  if (clientByOwner) return clientByOwner
 
-  if (error || !data) return null
-  return data
+  // Verifica se é funcionário (via user_metadata)
+  const clientId = user.user_metadata?.client_id
+  if (clientId && user.user_metadata?.role === 'employee') {
+    const { data: clientByEmployee } = await db
+      .from('clients')
+      .select('id, user_id')
+      .eq('id', clientId)
+      .single()
+    if (clientByEmployee) return clientByEmployee
+  }
+
+  return null
 }
