@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, getSupabaseAdmin } from '@/lib/supabase-admin'
+import { setChatwootAgentsOnline } from '@/lib/chatwoot'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin()
@@ -17,6 +18,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Seta agentes online no Chatwoot sempre que salvar
+  setChatwootAgentsOnline().catch(() => {})
+
   return NextResponse.json(data)
 }
 
