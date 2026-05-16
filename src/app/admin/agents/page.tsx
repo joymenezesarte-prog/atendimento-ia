@@ -147,6 +147,7 @@ export default function AgentsPage() {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
   const [creatingWidget, setCreatingWidget] = useState(false);
+  const [creatingInbox, setCreatingInbox] = useState(false);
   const [chatwootInboxes, setChatwootInboxes] = useState<ChaiwootInbox[]>([]);
   const [loadingInboxes, setLoadingInboxes] = useState(false);
   const [inboxesLoaded, setInboxesLoaded] = useState(false);
@@ -289,6 +290,25 @@ export default function AgentsPage() {
       showToast("error", "Erro de conexão");
     } finally {
       setCreatingWidget(false);
+    }
+  }
+
+  async function createInbox() {
+    if (!selected) return;
+    setCreatingInbox(true);
+    try {
+      const res = await fetch("/api/admin/agents/" + selected.id + "/create-inbox", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", data.error || "Erro ao criar inbox");
+      } else {
+        showToast("success", data.already_existed ? "Inbox já existia (ID: " + data.inbox_id + ")" : "Inbox criada com sucesso! (ID: " + data.inbox_id + ")");
+        load(selected.id);
+      }
+    } catch {
+      showToast("error", "Erro de conexão");
+    } finally {
+      setCreatingInbox(false);
     }
   }
 
@@ -468,46 +488,40 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              {/* Inbox Chatwoot (WhatsApp) — dropdown automático */}
+              {/* Inbox Chatwoot (WhatsApp) — criação automática */}
               <div>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>
                   Inbox WhatsApp (Chatwoot)
                 </label>
-                {inboxesLoaded ? (
-                  <div>
-                    <select
-                      className="input"
-                      value={editForm.chatwoot_inbox_id}
-                      onChange={e => setEditForm(f => ({ ...f, chatwoot_inbox_id: e.target.value }))}
-                    >
-                      <option value="">— Selecione a inbox do WhatsApp —</option>
-                      {chatwootInboxes
-                        .filter(i => !i.channel_type.toLowerCase().includes("instagram"))
-                        .map(i => (
-                          <option key={i.id} value={String(i.id)}>{i.name} (ID: {i.id})</option>
-                        ))}
-                    </select>
+                {selected.chatwoot_inbox_id ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", background: "var(--green-50)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "8px" }}>
+                    <CheckCircle size={16} style={{ color: "var(--green)", flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 700 }}>✓ Inbox criada</p>
+                      <p style={{ color: "var(--gray-500)", fontSize: "11px" }}>{"ID: " + selected.chatwoot_inbox_id}</p>
+                    </div>
                     <button
-                      onClick={loadChatwootInboxes}
-                      style={{ marginTop: "5px", display: "flex", alignItems: "center", gap: "4px", background: "none", border: "none", color: "var(--gray-400)", fontSize: "11px", cursor: "pointer", padding: 0 }}
+                      onClick={createInbox}
+                      disabled={creatingInbox}
+                      style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white", cursor: "pointer" }}
                     >
-                      <RefreshCw size={10} /> Atualizar lista
+                      <RefreshCw size={11} /> Recriar
                     </button>
                   </div>
                 ) : (
                   <button
-                    onClick={loadChatwootInboxes}
-                    disabled={loadingInboxes}
+                    onClick={createInbox}
+                    disabled={creatingInbox}
                     style={{
                       display: "flex", alignItems: "center", gap: "8px", width: "100%",
-                      padding: "10px 14px", background: "white", border: "2px dashed var(--gray-200)",
-                      borderRadius: "8px", cursor: loadingInboxes ? "not-allowed" : "pointer",
+                      padding: "12px 16px", background: "white", border: "2px dashed var(--gray-200)",
+                      borderRadius: "8px", cursor: creatingInbox ? "not-allowed" : "pointer",
                       color: "var(--gray-600)", fontSize: "13px", fontWeight: 600,
                     }}
                   >
                     <Phone size={14} style={{ color: "var(--green)" }} />
-                    {loadingInboxes ? "Buscando inboxes..." : (editForm.chatwoot_inbox_id ? "Inbox #" + editForm.chatwoot_inbox_id + " — clique para trocar" : "Selecionar Inbox do WhatsApp")}
-                    {!loadingInboxes && <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--gray-400)" }}>automático ✨</span>}
+                    {creatingInbox ? "Criando inbox no Chatwoot..." : "Criar Inbox WhatsApp"}
+                    {!creatingInbox && <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--gray-400)" }}>automático ✨</span>}
                   </button>
                 )}
               </div>
@@ -807,7 +821,10 @@ export default function AgentsPage() {
               </div>
               <div>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Instruções Iniciais</label>
-                <textarea className="input" value={form.instructions} onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Você é um assistente de atendimento para..." rows={3} style={{ resize: "vertical" }} />
+              </div>
+              <div>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>Instrucoes Iniciais</label>
+                <textarea className="input" value={form.instructions} onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Voce e um assistente de atendimento para..." rows={3} style={{ resize: "vertical" }} />
               </div>
               <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "4px" }}>
                 <button className="btn-ghost" onClick={() => setShowModal(false)}>Cancelar</button>
@@ -822,4 +839,3 @@ export default function AgentsPage() {
     </div>
   );
 }
-                
