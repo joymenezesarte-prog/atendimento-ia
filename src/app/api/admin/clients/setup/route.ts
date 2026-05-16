@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, getSupabaseAdmin } from '@/lib/supabase-admin'
+import { createWebWidgetInbox } from '@/lib/chatwoot'
 
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin()
@@ -90,24 +91,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── 4. Criar widget de site no Chatwoot ──
+  // ── 4. Criar widget de site + atribuir agentes + setar online automaticamente ──
   let websiteToken: string | null = null
-  if (chatwootUrl && chatwootAcct && chatwootTok) {
-    try {
-      const widgetRes = await fetch(`${chatwootUrl}/api/v1/accounts/${chatwootAcct}/inboxes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'api_access_token': chatwootTok },
-        body: JSON.stringify({
-          name: `Site - ${company_name}`,
-          channel: { type: 'web_widget', website_url: process.env.NEXT_PUBLIC_SITE_URL || 'https://app.atendimentoia.cloud' },
-        }),
-      })
-      if (widgetRes.ok) {
-        const widgetData = await widgetRes.json()
-        websiteToken = widgetData.website_token || null
-      }
-    } catch { /* não bloqueia o cadastro */ }
-  }
+  try {
+    const widget = await createWebWidgetInbox(`Site - ${company_name}`)
+    websiteToken = widget?.website_token ?? null
+  } catch { /* não bloqueia o cadastro */ }
 
   // ── 5. Criar agente no Supabase vinculado à inbox ──
   let agent = null
