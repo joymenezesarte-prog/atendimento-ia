@@ -709,7 +709,7 @@ export default function AgentsPage() {
                   </div>
                 ) : (
                   <button
-                    onClick={createWidget}
+                    onClick={() => createWidget()}
                     disabled={creatingWidget}
                     style={{
                       display: "flex", alignItems: "center", gap: "8px", width: "100%",
