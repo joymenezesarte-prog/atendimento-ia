@@ -277,16 +277,20 @@ export default function AgentsPage() {
     }
   }
 
-  async function createWidget() {
+  async function createWidget(force = false) {
     if (!selected) return;
     setCreatingWidget(true);
     try {
-      const res = await fetch("/api/admin/agents/" + selected.id + "/create-widget", { method: "POST" });
+      const res = await fetch("/api/admin/agents/" + selected.id + "/create-widget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
       const data = await res.json();
       if (!res.ok) {
         showToast("error", data.error || "Erro ao criar widget");
       } else {
-        showToast("success", data.already_existed ? "Widget já existia — token carregado!" : "Widget criado com sucesso!");
+        showToast("success", force ? "Widget recriado com sucesso!" : data.already_existed ? "Widget já existia — token carregado!" : "Widget criado com sucesso!");
         load(selected.id);
       }
     } catch {
@@ -669,7 +673,7 @@ export default function AgentsPage() {
                         <p style={{ color: "var(--gray-500)", fontSize: "11px", fontFamily: "monospace" }}>{selected.chatwoot_website_token}</p>
                       </div>
                       <button
-                        onClick={createWidget}
+                        onClick={() => createWidget(true)}
                         disabled={creatingWidget}
                         style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white", cursor: "pointer" }}
                       >
