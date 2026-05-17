@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, getSupabaseAdmin } from '@/lib/supabase-admin'
-import { createWebWidgetInbox } from '@/lib/chatwoot'
+import { createWebWidgetInbox, createN8nAutomation, disableInboxWorkingHours } from '@/lib/chatwoot'
 
 export async function POST(request: NextRequest) {
   const admin = await requireAdmin()
@@ -50,9 +50,10 @@ export async function POST(request: NextRequest) {
 
   if (clientError) return NextResponse.json({ error: clientError.message }, { status: 500 })
 
-  // ── 3. Criar inbox no Chatwoot via API ──
+  // ── 3. Criar inbox WhatsApp no Chatwoot + automação n8n ──
   let inboxId: number | null = null
   let chatwootError: string | null = null
+  const agentDisplayName = agent_name || `Agente ${company_name}`
 
   if (whatsapp_number && meta_phone_number_id) {
     if (!chatwootUrl || !chatwootAcct || !chatwootTok || !metaToken || !metaWabaId) {
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
                 business_account_id: metaWabaId,
               },
             },
+            working_hours_enabled: false,
           }),
         })
         const inboxData = await res.json()
@@ -84,6 +86,13 @@ export async function POST(request: NextRequest) {
           chatwootError = inboxData?.message || inboxData?.error || `Chatwoot retornou ${res.status}`
         } else {
           inboxId = inboxData.id || null
+          // Cria automação n8n para WhatsApp em paralelo com desativação de working hours
+          if (inboxId) {
+            await Promise.all([
+              disableInboxWorkingHours(inboxId),
+              createN8nAutomation(inboxId, `${agentDisplayName} - WhatsApp`),
+            ])
+          }
         }
       } catch (e: unknown) {
         chatwootError = e instanceof Error ? e.message : 'Falha ao conectar com o Chatwoot'
@@ -91,21 +100,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── 4. Criar widget de site + atribuir agentes + setar online automaticamente ──
+  // ── 4. Criar widget de site (já cria automação n8n internamente via createWebWidgetInbox) ──
   let websiteToken: string | null = null
   try {
     const widget = await createWebWidgetInbox(`Site - ${company_name}`)
     websiteToken = widget?.website_token ?? null
   } catch { /* não bloqueia o cadastro */ }
 
-  // ── 5. Criar agente no Supabase vinculado à inbox ──
+  // ── 5. Criar agente no Supabase vinculado às inboxes ──
   let agent = null
   if (client) {
     const { data: agentData } = await db
       .from('agents')
       .insert({
         client_id: client.id,
-        name: agent_name || `Agente ${company_name}`,
+        name: agentDisplayName,
         channel: 'whatsapp',
         phone_number: whatsapp_number || null,
         chatwoot_inbox_id: inboxId,
@@ -131,7 +140,7 @@ export async function POST(request: NextRequest) {
         ? 'cliente_criado_sem_chatwoot'
         : 'cliente_criado_sem_whatsapp',
     message: inboxId
-      ? `✅ Cliente criado, inbox WhatsApp #${inboxId} e widget de site criados no Chatwoot.`
+      ? `✅ Cliente criado, inbox WhatsApp #${inboxId} e widget de site criados no Chatwoot com automação n8n.`
       : chatwootError
         ? `⚠️ Cliente criado, mas a inbox do Chatwoot falhou: ${chatwootError}`
         : '✅ Cliente criado. Configure o WhatsApp depois pelo painel de agentes.',
