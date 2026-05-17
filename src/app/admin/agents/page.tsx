@@ -310,9 +310,7 @@ export default function AgentsPage() {
       if (!res.ok) {
         showToast("error", data.error || "Erro ao corrigir inbox");
       } else {
-        showToast("success", data.automation_created
-          ? "✅ Inbox corrigida + automação n8n criada!"
-          : `⚠️ Inbox corrigida. ${data.automation_message}`);
+        showToast("success", data.summary || "✅ Inboxes corrigidas!");
       }
     } catch {
       showToast("error", "Erro de conexão");
