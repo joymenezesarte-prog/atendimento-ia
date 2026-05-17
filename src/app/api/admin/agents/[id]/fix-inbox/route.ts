@@ -9,10 +9,10 @@ import {
 
 /**
  * POST /api/admin/agents/[id]/fix-inbox
- * Corrige a inbox do widget do agente:
- *   1. Desativa horário de trabalho (elimina "Estamos ausentes")
- *   2. Cria automação n8n para o agente responder às mensagens
- *   3. Seta todos os agentes como online
+ * Corrige TODOS os canais do agente (WhatsApp, Instagram, Widget):
+ *   1. Desativa horário de trabalho em cada inbox (elimina "Estamos ausentes")
+ *   2. Cria automação n8n por inbox para o agente responder mensagens
+ *   3. Seta todos os agentes Chatwoot como online
  */
 export async function POST(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin()
@@ -23,34 +23,61 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
 
   const { data: agent, error: agentErr } = await db
     .from('agents')
-    .select('id, name, chatwoot_website_token')
+    .select('id, name, chatwoot_inbox_id, chatwoot_instagram_inbox_id, chatwoot_website_token')
     .eq('id', id)
     .single()
 
   if (agentErr || !agent) return NextResponse.json({ error: 'Agente não encontrado' }, { status: 404 })
-  if (!agent.chatwoot_website_token) {
-    return NextResponse.json({ error: 'Agente não tem widget configurado. Crie o widget primeiro.' }, { status: 400 })
+
+  const results: Record<string, { inbox_id: number | null; working_hours_disabled: boolean; automation: { ok: boolean; reason?: string } }> = {}
+
+  // ── WhatsApp inbox ──
+  if (agent.chatwoot_inbox_id) {
+    const [, autoResult] = await Promise.all([
+      disableInboxWorkingHours(agent.chatwoot_inbox_id),
+      createN8nAutomation(agent.chatwoot_inbox_id, `${agent.name} - WhatsApp`),
+    ])
+    results.whatsapp = { inbox_id: agent.chatwoot_inbox_id, working_hours_disabled: true, automation: autoResult }
   }
 
-  // Busca ID da inbox no Chatwoot pelo website_token
-  const inboxId = await findInboxIdByWebsiteToken(agent.chatwoot_website_token)
-  if (!inboxId) {
-    return NextResponse.json({ error: 'Inbox não encontrada no Chatwoot. O token pode estar desatualizado — recrie o widget.' }, { status: 404 })
+  // ── Instagram inbox ──
+  if (agent.chatwoot_instagram_inbox_id) {
+    const [, autoResult] = await Promise.all([
+      disableInboxWorkingHours(agent.chatwoot_instagram_inbox_id),
+      createN8nAutomation(agent.chatwoot_instagram_inbox_id, `${agent.name} - Instagram`),
+    ])
+    results.instagram = { inbox_id: agent.chatwoot_instagram_inbox_id, working_hours_disabled: true, automation: autoResult }
   }
 
-  // Executa as correções em paralelo
-  const [, automationResult] = await Promise.all([
-    disableInboxWorkingHours(inboxId),
-    createN8nAutomation(inboxId, agent.name),
-    setChatwootAgentsOnline(),
-  ])
+  // ── Web Widget inbox (lookup por token) ──
+  if (agent.chatwoot_website_token) {
+    const widgetInboxId = await findInboxIdByWebsiteToken(agent.chatwoot_website_token)
+    if (widgetInboxId) {
+      const [, autoResult] = await Promise.all([
+        disableInboxWorkingHours(widgetInboxId),
+        createN8nAutomation(widgetInboxId, `${agent.name} - Widget`),
+      ])
+      results.widget = { inbox_id: widgetInboxId, working_hours_disabled: true, automation: autoResult }
+    } else {
+      results.widget = { inbox_id: null, working_hours_disabled: false, automation: { ok: false, reason: 'Inbox não encontrada no Chatwoot — recrie o widget.' } }
+    }
+  }
+
+  // Seta todos os agentes online
+  await setChatwootAgentsOnline()
+
+  const hasAny = Object.keys(results).length > 0
+  if (!hasAny) {
+    return NextResponse.json({ error: 'Agente não tem nenhuma inbox configurada (WhatsApp, Instagram ou Widget).' }, { status: 400 })
+  }
+
+  const allAutomationsOk = Object.values(results).every(r => r.automation.ok)
+  const channels = Object.keys(results).join(', ')
 
   return NextResponse.json({
-    inbox_id: inboxId,
-    working_hours_disabled: true,
-    automation_created: automationResult.ok,
-    automation_message: automationResult.ok
-      ? `Automação criada — o agente IA agora responde via n8n.`
-      : `Aviso: ${automationResult.reason}`,
+    results,
+    summary: allAutomationsOk
+      ? `✅ Automações n8n criadas para: ${channels}`
+      : `⚠️ Inboxes corrigidas. Alguns canais precisam de N8N_WEBHOOK_URL configurada.`,
   })
 }
