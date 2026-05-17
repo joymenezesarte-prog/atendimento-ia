@@ -154,6 +154,7 @@ export default function AgentsPage() {
   const [connectingInstagram, setConnectingInstagram] = useState(false);
   const [instagramFallback, setInstagramFallback] = useState(false);
   const [instagramManualId, setInstagramManualId] = useState("");
+  const [fixingInbox, setFixingInbox] = useState(false);
 
   function showToast(type: "success" | "error", msg: string) {
     setToast({ type, msg });
@@ -297,6 +298,26 @@ export default function AgentsPage() {
       showToast("error", "Erro de conexão");
     } finally {
       setCreatingWidget(false);
+    }
+  }
+
+  async function fixInbox() {
+    if (!selected) return;
+    setFixingInbox(true);
+    try {
+      const res = await fetch("/api/admin/agents/" + selected.id + "/fix-inbox", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", data.error || "Erro ao corrigir inbox");
+      } else {
+        showToast("success", data.automation_created
+          ? "✅ Inbox corrigida + automação n8n criada!"
+          : `⚠️ Inbox corrigida. ${data.automation_message}`);
+      }
+    } catch {
+      showToast("error", "Erro de conexão");
+    } finally {
+      setFixingInbox(false);
     }
   }
 
@@ -672,13 +693,23 @@ export default function AgentsPage() {
                         <p style={{ color: "var(--green)", fontSize: "12px", fontWeight: 700 }}>✓ Widget criado</p>
                         <p style={{ color: "var(--gray-500)", fontSize: "11px", fontFamily: "monospace" }}>{selected.chatwoot_website_token}</p>
                       </div>
-                      <button
-                        onClick={() => createWidget(true)}
-                        disabled={creatingWidget}
-                        style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white", cursor: "pointer" }}
-                      >
-                        <RefreshCw size={11} /> Recriar
-                      </button>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          onClick={() => fixInbox()}
+                          disabled={fixingInbox}
+                          title="Corrige 'Estamos ausentes' e conecta ao agente de IA"
+                          style={{ display: "flex", alignItems: "center", gap: "5px", color: "#7c3aed", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid #ddd6fe", background: "#f5f3ff", cursor: fixingInbox ? "not-allowed" : "pointer", fontWeight: 600 }}
+                        >
+                          <AlertCircle size={11} /> {fixingInbox ? "Corrigindo..." : "Corrigir IA"}
+                        </button>
+                        <button
+                          onClick={() => createWidget(true)}
+                          disabled={creatingWidget}
+                          style={{ display: "flex", alignItems: "center", gap: "5px", color: "var(--gray-500)", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--gray-200)", background: "white", cursor: "pointer" }}
+                        >
+                          <RefreshCw size={11} /> Recriar
+                        </button>
+                      </div>
                     </div>
                     <div style={{ position: "relative" }}>
                       <pre style={{
