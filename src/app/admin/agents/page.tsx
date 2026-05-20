@@ -96,6 +96,7 @@ interface Agent {
   status: string;
   personality: string | null;
   instructions: string | null;
+  groq_api_key: string | null;
   features: Record<string, boolean>;
   feature_config: Record<string, string>;
   chatwoot_inbox_id: number | null;
@@ -181,6 +182,7 @@ export default function AgentsPage() {
           chatwoot_inbox_id: String(updated.chatwoot_inbox_id ?? ""),
           personality: updated.personality ?? "",
           instructions: updated.instructions ?? "",
+          groq_api_key: updated.groq_api_key ?? "",
           features: updated.features ?? {},
           feature_config: updated.feature_config ?? {},
           instagramInboxId: String(updated.chatwoot_instagram_inbox_id ?? ""),
@@ -209,12 +211,12 @@ export default function AgentsPage() {
     }
   }, []);
 
-  const [form, setForm] = useState({ clientId: "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "" });
+  const [form, setForm] = useState({ clientId: "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "", groq_api_key: "" });
   const [editForm, setEditForm] = useState<{
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
-    personality: string; instructions: string; features: Record<string, boolean>;
+    personality: string; instructions: string; groq_api_key: string; features: Record<string, boolean>;
     feature_config: Record<string, string>; instagramInboxId: string;
-  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", features: {}, feature_config: {}, instagramInboxId: "" });
+  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", groq_api_key: "", features: {}, feature_config: {}, instagramInboxId: "" });
 
   useEffect(() => { load(); }, []);
 
@@ -229,6 +231,7 @@ export default function AgentsPage() {
       chatwoot_inbox_id: String(agent.chatwoot_inbox_id ?? ""),
       personality: agent.personality ?? "",
       instructions: agent.instructions ?? "",
+      groq_api_key: agent.groq_api_key ?? "",
       features: agent.features ?? {},
       feature_config: agent.feature_config ?? {},
       instagramInboxId: String(agent.chatwoot_instagram_inbox_id ?? ""),
@@ -257,6 +260,7 @@ export default function AgentsPage() {
           chatwoot_inbox_id: editForm.chatwoot_inbox_id ? parseInt(editForm.chatwoot_inbox_id) : null,
           personality: editForm.personality || null,
           instructions: editForm.instructions || null,
+          groq_api_key: editForm.groq_api_key || null,
           features: editForm.features,
           feature_config: editForm.feature_config,
           chatwoot_instagram_inbox_id: editForm.instagramInboxId ? parseInt(editForm.instagramInboxId) : null,
@@ -457,6 +461,7 @@ export default function AgentsPage() {
         phone_number: form.phone_number || null,
         personality: form.personality,
         instructions: form.instructions,
+        groq_api_key: form.groq_api_key || null,
       }),
     });
     setSaving(false);
@@ -500,7 +505,7 @@ export default function AgentsPage() {
           <h2 style={{ color: "var(--gray-900)", fontSize: "20px", fontWeight: 800 }}>Agentes IA</h2>
           <p style={{ color: "var(--gray-500)", fontSize: "13px", marginTop: "2px" }}>{agents.length} configurados</p>
         </div>
-        <button className="btn-primary" onClick={() => { setForm({ clientId: clients[0]?.id ?? "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "" }); setShowModal(true); }}>
+        <button className="btn-primary" onClick={() => { setForm({ clientId: clients[0]?.id ?? "", name: "", channel: "whatsapp", phone_number: "", personality: "", instructions: "", groq_api_key: "" }); setShowModal(true); }}>
           <Plus size={16} /> Novo Agente
         </button>
       </div>
@@ -638,6 +643,21 @@ export default function AgentsPage() {
                   rows={4}
                   style={{ resize: "vertical", fontFamily: "monospace", fontSize: "12px" }}
                 />
+              </div>
+
+              <div>
+                <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>🤖 Chave API Groq</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={editForm.groq_api_key}
+                  onChange={e => setEditForm(f => ({ ...f, groq_api_key: e.target.value }))}
+                  placeholder="gsk_..."
+                  style={{ fontFamily: "monospace", fontSize: "12px" }}
+                />
+                <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>
+                  Chave individual do cliente em <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{ color: "var(--green)" }}>console.groq.com</a>
+                </p>
               </div>
 
               {/* Google Agenda */}
@@ -965,6 +985,7 @@ export default function AgentsPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
