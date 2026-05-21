@@ -11,6 +11,8 @@ export async function POST(request: NextRequest) {
     const {
       agent_id,
       lead_name,
+      lead_email,
+      attendee_emails = [],
       summary,
       description,
       start_datetime,
@@ -57,27 +59,18 @@ export async function POST(request: NextRequest) {
       endDt = new Date(tomorrow.getTime() + 60 * 60 * 1000).toISOString()
     }
 
+    // Monta lista de convidados: lead + emails da equipe fornecidos
+    const allAttendees: { email: string }[] = []
+    if (lead_email) allAttendees.push({ email: lead_email })
+    if (Array.isArray(attendee_emails)) {
+      attendee_emails.forEach((e: string) => { if (e) allAttendees.push({ email: e }) })
+    }
+
     // Cria o evento no Google Calendar
     const event = await createEvent(agent.google_refresh_token, calendarId, {
       summary: summary || `Reunião com ${lead_name || 'Cliente'}`,
       description: description || `Agendamento via agente IA ${agent.name}`,
       start: { dateTime: startDt, timeZone: timezone },
       end: { dateTime: endDt, timeZone: timezone },
-    })
-
-    return NextResponse.json({
-      status: 'created',
-      event_id: event.id,
-      event_link: event.htmlLink,
-      calendar_id: calendarId,
-      start: startDt,
-      end: endDt,
-    })
-  } catch (err: any) {
-    console.error('Erro ao criar evento no Google Calendar:', err)
-    return NextResponse.json({
-      error: err.message || 'Erro interno ao criar evento',
-      status: 'error'
-    }, { status: 500 })
-  }
-}
+      ...(allAttendees.length > 0 ? { attendees: allAttendees } : {}),
+ 

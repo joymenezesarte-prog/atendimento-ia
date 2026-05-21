@@ -76,7 +76,7 @@ export async function createEvent(
 ): Promise<{ id: string; htmlLink: string }> {
   const accessToken = await getAccessToken(refreshToken)
   const res = await fetch(
-    `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events`,
+    `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`,
     {
       method: 'POST',
       headers: {
@@ -114,6 +114,4 @@ export async function getAvailableSlots(
   const data = await res.json()
   return (data.items || []).map((e: any) => ({
     start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end?.date,
-  }))
-}
+    end: e.end?.dateTime || e.end
