@@ -32,7 +32,7 @@ export async function exchangeCodeForTokens(code: string): Promise<{
   })
   if (!res.ok) {
     const err = await res.json()
-    throw new Error(err.error_description || 'Erro ao trocar código por tokens')
+    throw new Error(err.error_description || 'Erro ao trocar codigo por tokens')
   }
   return res.json()
 }
@@ -58,7 +58,7 @@ export async function listCalendars(refreshToken: string): Promise<{ id: string;
   const res = await fetch(`${GOOGLE_CALENDAR_URL}/users/me/calendarList`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  if (!res.ok) throw new Error('Erro ao listar calendários')
+  if (!res.ok) throw new Error('Erro ao listar calendarios')
   const data = await res.json()
   return data.items || []
 }
@@ -114,4 +114,6 @@ export async function getAvailableSlots(
   const data = await res.json()
   return (data.items || []).map((e: any) => ({
     start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end
+    end: e.end?.dateTime || e.end?.date,
+  }))
+}
