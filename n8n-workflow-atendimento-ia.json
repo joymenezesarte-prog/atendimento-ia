@@ -287,7 +287,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?conversation_id=eq.{{ $json.chatwoot_conv_id }}&order=created_at.desc&limit=20&select=role,content",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/messages?conversation_id=eq.{{ $json.conversation_id }}&order=created_at.asc&limit=20&select=role,content",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -306,7 +306,7 @@
     },
     {
       "id": "n16",
-      "name": "👤 Salvar Lead",
+      "name": "🔄 Sincronizar Conversa",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
@@ -315,33 +315,19 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads",
+        "url": "={{ $env.SITE_URL }}/api/internal/sync-conversation",
         "sendBody": true,
-        "contentType": "json",
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ agent_id: $json.agent_id, chatwoot_conv_id: String($json.chatwoot_conv_id), lead_name: $json.sender_name, lead_phone: $json.sender_phone, channel: $json.agent_channel, last_message: $json.content }) }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "apikey",
-              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
-            },
-            {
-              "name": "Prefer",
-              "value": "resolution=merge-duplicates,return=representation"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
             }
           ]
-        },
-        "body": {
-          "specifyBody": "json",
-          "jsonBody": "={\"client_id\":\"{{ $json.client_id }}\",\"agent_id\":\"{{ $json.agent_id }}\",\"name\":\"{{ $json.sender_name }}\",\"phone\":\"{{ $json.sender_phone }}\",\"channel\":\"{{ $json.agent_channel }}\",\"last_contact\":\"{{ new Date().toISOString() }}\"}"
         },
         "options": {}
       }
@@ -356,7 +342,7 @@
         240
       ],
       "parameters": {
-        "jsCode": "\nconst ctx = $('🔗 Unificar Branches').first().json;\nconst histRaw = $('📜 Buscar Histórico').first().json;\nconst history = Array.isArray(histRaw) ? histRaw.reverse() : [];\nconst feat = ctx.agent_features || {};\n\n// Histórico formatado\nconst histText = history.map(m => {\n  const role = m.role === 'assistant' ? `${ctx.agent_name}` : ctx.sender_name;\n  return `${role}: ${m.content}`;\n}).join('\\n') || '(início da conversa)';\n\n// System prompt\nconst systemPrompt = `Você é ${ctx.agent_name}, agente de atendimento via ${ctx.agent_channel}.\n\nPERSONALIDADE: ${ctx.agent_personality}\n\nINSTRUÇÕES:\n${ctx.agent_instructions}\n\nEMPRESA: ${ctx.client_name}\n\nREGRAS:\n- Responda SEMPRE em português brasileiro\n- Seja natural, como numa conversa real de WhatsApp\n- Mensagens curtas e diretas\n- Não mencione que é IA a menos que perguntado diretamente\n- Nunca quebre o personagem\n\nHISTÓRICO:\n${histText}`;\n\n// Partes do conteúdo para Gemini\nlet parts = [];\n\nif (ctx.media_base64 && ctx.media_type === 'image') {\n  parts.push({inline_data: {mime_type: ctx.att_mime || 'image/jpeg', data: ctx.media_base64}});\n  parts.push({text: ctx.content\n    ? `O cliente enviou esta imagem com a mensagem: \"${ctx.content}\". Analise a imagem e responda.`\n    : 'O cliente enviou esta imagem. Analise e responda adequadamente.'});\n} else if (ctx.media_base64 && ctx.media_type === 'document') {\n  parts.push({inline_data: {mime_type: ctx.att_mime || 'application/pdf', data: ctx.media_base64}});\n  parts.push({text: ctx.content\n    ? `O cliente enviou este documento com a mensagem: \"${ctx.content}\". Leia o documento e responda.`\n    : 'O cliente enviou este documento. Leia e responda.'});\n} else {\n  parts.push({text: `${ctx.sender_name}: ${ctx.content}`});\n}\n\n// Instruções internas de features\nlet internalNotes = '';\nif (feat.feat_qualify_lead) {\n  internalNotes += '\\n\\n[SISTEMA] Ao responder, avalie internamente o score deste lead de 0 a 10. No FINAL da sua resposta adicione exatamente: |||SCORE:N||| onde N é o número.';\n}\nif (feat.feat_urgency_detection) {\n  const urgWords = ['urgente','emergência','urgência','socorro','dor forte','sangue','acidente','agora mesmo'];\n  const isUrgent = urgWords.some(w => (ctx.content||'').toLowerCase().includes(w));\n  if (isUrgent) internalNotes += '\\n\\n[SISTEMA] URGÊNCIA DETECTADA — priorize e acolha o cliente imediatamente.';\n}\nif (feat.feat_send_cta) {\n  const ctaWords = ['preço','valor','quanto','comprar','contratar','plano','assinar'];\n  const wantsCTA = ctaWords.some(w => (ctx.content||'').toLowerCase().includes(w));\n  if (wantsCTA) internalNotes += '\\n\\n[SISTEMA] Cliente demonstrou interesse comercial. Inclua uma chamada para ação clara na resposta.';\n}\n\nconst finalSystem = systemPrompt + internalNotes;\n\n// Detecções de features\nconst schedWords = ['agendar','marcar','horário','consulta','reunião','quando','disponível','data'];\nconst humanWords = ['falar com pessoa','atendente humano','gerente','reclamação','falar com alguém'];\nconst urgWords2 = ['urgente','emergência','socorro','agora mesmo','dor forte'];\n\nreturn [{ json: {\n  ...ctx,\n  system_prompt: finalSystem,\n  gemini_parts: parts,\n  apiKey: ctx.groq_api_key || ctx.gemini_key || '',\n  wants_scheduling: feat.feat_scheduling && schedWords.some(w => (ctx.content||'').toLowerCase().includes(w)),\n  wants_human: feat.feat_escalate_human && humanWords.some(w => (ctx.content||'').toLowerCase().includes(w)),\n  is_urgent: feat.feat_urgency_detection && urgWords2.some(w => (ctx.content||'').toLowerCase().includes(w)),\n}}];\n"
+        "jsCode": "\nconst ctx = $('🔗 Unificar Branches').first().json;\nconst histRaw = $('📜 Buscar Histórico').first().json;\nconst history = Array.isArray(histRaw) ? histRaw.reverse() : [];\nconst feat = ctx.agent_features || {};\n\n// Histórico formatado\nconst histText = history.map(m => {\n  const role = m.role === 'assistant' ? `${ctx.agent_name}` : ctx.sender_name;\n  return `${role}: ${m.content}`;\n}).join('\\n') || '(início da conversa)';\n\n// System prompt\nconst systemPrompt = `Você é ${ctx.agent_name}, agente de atendimento via ${ctx.agent_channel}.\n\nPERSONALIDADE: ${ctx.agent_personality}\n\nINSTRUÇÕES:\n${ctx.agent_instructions}\n\nEMPRESA: ${ctx.client_name}\n\nREGRAS:\n- Responda SEMPRE em português brasileiro\n- Seja natural, como numa conversa real de WhatsApp\n- Mensagens curtas e diretas\n- Não mencione que é IA a menos que perguntado diretamente\n- Nunca quebre o personagem\n\nHISTÓRICO:\n${histText}`;\n\n// Partes do conteúdo para Gemini\nlet parts = [];\n\nif (ctx.media_base64 && ctx.media_type === 'image') {\n  parts.push({inline_data: {mime_type: ctx.att_mime || 'image/jpeg', data: ctx.media_base64}});\n  parts.push({text: ctx.content\n    ? `O cliente enviou esta imagem com a mensagem: \"${ctx.content}\". Analise a imagem e responda.`\n    : 'O cliente enviou esta imagem. Analise e responda adequadamente.'});\n} else if (ctx.media_base64 && ctx.media_type === 'document') {\n  parts.push({inline_data: {mime_type: ctx.att_mime || 'application/pdf', data: ctx.media_base64}});\n  parts.push({text: ctx.content\n    ? `O cliente enviou este documento com a mensagem: \"${ctx.content}\". Leia o documento e responda.`\n    : 'O cliente enviou este documento. Leia e responda.'});\n} else {\n  parts.push({text: `${ctx.sender_name}: ${ctx.content}`});\n}\n\n// Instruções internas de features\nlet internalNotes = '';\nif (feat.feat_qualify_lead) {\n  internalNotes += '\\n\\n[SISTEMA] Ao responder, avalie internamente o score deste lead de 0 a 10. No FINAL da sua resposta adicione exatamente: |||SCORE:N||| onde N é o número.';\n}\nif (feat.feat_urgency_detection) {\n  const urgWords = ['urgente','emergência','urgência','socorro','dor forte','sangue','acidente','agora mesmo'];\n  const isUrgent = urgWords.some(w => (ctx.content||'').toLowerCase().includes(w));\n  if (isUrgent) internalNotes += '\\n\\n[SISTEMA] URGÊNCIA DETECTADA — priorize e acolha o cliente imediatamente.';\n}\nif (feat.feat_send_cta) {\n  const ctaWords = ['preço','valor','quanto','comprar','contratar','plano','assinar'];\n  const wantsCTA = ctaWords.some(w => (ctx.content||'').toLowerCase().includes(w));\n  if (wantsCTA) internalNotes += '\\n\\n[SISTEMA] Cliente demonstrou interesse comercial. Inclua uma chamada para ação clara na resposta.';\n}\n\nconst finalSystem = systemPrompt + internalNotes;\n\n// Detecções de features\nconst schedWords = ['agendar','marcar','horário','consulta','reunião','quando','disponível','data'];\nconst humanWords = ['falar com pessoa','atendente humano','gerente','reclamação','falar com alguém'];\nconst urgWords2 = ['urgente','emergência','socorro','agora mesmo','dor forte'];\n\nconst syncResp = $('🔄 Sincronizar Conversa').first().json;\nreturn [{ json: {\n  ...ctx,\n  conversation_id: syncResp.conversation_id || null,\n  lead_id: syncResp.lead_id || null,\n  system_prompt: finalSystem,\n  gemini_parts: parts,\n  apiKey: ctx.groq_api_key || ctx.gemini_key || '',\n  wants_scheduling: feat.feat_scheduling && schedWords.some(w => (ctx.content||'').toLowerCase().includes(w)),\n  wants_human: feat.feat_escalate_human && humanWords.some(w => (ctx.content||'').toLowerCase().includes(w)),\n  is_urgent: feat.feat_urgency_detection && urgWords2.some(w => (ctx.content||'').toLowerCase().includes(w)),\n}}];\n"
       }
     },
     {
@@ -409,7 +395,7 @@
         },
         "body": {
           "specifyBody": "json",
-          "jsonBody": "={\"conversation_id\":\"{{ $json.chatwoot_conv_id }}\",\"role\":\"user\",\"content\":{{ JSON.stringify($json.content) }}}"
+          "jsonBody": "={\"conversation_id\":\"{{ $json.conversation_id }}\",\"role\":\"user\",\"content\":{{ JSON.stringify($json.content) }}}"
         },
         "options": {}
       }
@@ -451,7 +437,7 @@
         },
         "body": {
           "specifyBody": "json",
-          "jsonBody": "={\"conversation_id\":\"{{ $json.chatwoot_conv_id }}\",\"role\":\"assistant\",\"content\":{{ JSON.stringify($json.response_text) }}}"
+          "jsonBody": "={\"conversation_id\":\"{{ $json.conversation_id }}\",\"role\":\"assistant\",\"content\":{{ JSON.stringify($json.response_text) }}}"
         },
         "options": {}
       }
@@ -921,12 +907,7 @@
       "main": [
         [
           {
-            "node": "📜 Buscar Histórico",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "👤 Salvar Lead",
+            "node": "🔄 Sincronizar Conversa",
             "type": "main",
             "index": 0
           }
@@ -940,17 +921,6 @@
             "node": "✍️ Construir Prompt",
             "type": "main",
             "index": 0
-          }
-        ]
-      ]
-    },
-    "👤 Salvar Lead": {
-      "main": [
-        [
-          {
-            "node": "✍️ Construir Prompt",
-            "type": "main",
-            "index": 1
           }
         ]
       ]
@@ -1068,6 +1038,17 @@
         [
           {
             "node": "💯 Atualizar Score Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔄 Sincronizar Conversa": {
+      "main": [
+        [
+          {
+            "node": "📜 Buscar Histórico",
             "type": "main",
             "index": 0
           }
