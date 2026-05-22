@@ -9,15 +9,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       agent_id,
-      chatwoot_conv_id,   // ID da conversa no Chatwoot (string)
+      chatwoot_conv_id,
       lead_name,
       lead_phone,
       lead_email,
       channel = 'whatsapp',
       last_message,
       score = 0,
-      // Se quiser salvar a mensagem junto (opcional)
-      message_role,       // 'user' | 'assistant'
+      message_role,
       message_content,
     } = body
 
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     const clientId = agent.client_id
 
-    // 2. Upsert lead pelo telefone (ou cria novo se nao existir)
+    // 2. Upsert lead pelo telefone
     let leadId: string | null = null
 
     if (lead_phone) {
@@ -56,19 +55,16 @@ export async function POST(request: NextRequest) {
 
       if (existingLead) {
         leadId = existingLead.id
-        // Atualiza dados do lead se necessario
         await db
           .from('leads')
           .update({
             name: lead_name || undefined,
             email: lead_email || undefined,
             last_contact: new Date().toISOString(),
-            score: score || undefined,
             updated_at: new Date().toISOString(),
           })
           .eq('id', leadId)
       } else {
-        // Cria novo lead
         const { data: newLead, error: leadError } = await db
           .from('leads')
           .insert({
@@ -88,8 +84,6 @@ export async function POST(request: NextRequest) {
           console.error('Erro ao criar lead:', leadError)
         } else {
           leadId = newLead.id
-          // Incrementa leads_count no agente
-          await db.rpc('increment_agent_leads', { p_agent_id: agent_id }).catch(() => {})
         }
       }
     }
@@ -106,7 +100,6 @@ export async function POST(request: NextRequest) {
 
     if (existingConv) {
       conversationId = existingConv.id
-      // Atualiza last_message e score
       await db
         .from('conversations')
         .update({
@@ -118,7 +111,6 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', conversationId)
     } else {
-      // Cria nova conversa
       const { data: newConv, error: convError } = await db
         .from('conversations')
         .insert({
@@ -145,9 +137,6 @@ export async function POST(request: NextRequest) {
         )
       }
       conversationId = newConv.id
-
-      // Incrementa conversations_count no agente
-      await db.rpc('increment_agent_conversations', { p_agent_id: agent_id }).catch(() => {})
     }
 
     // 4. Salva mensagem se fornecida
