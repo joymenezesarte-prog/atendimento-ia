@@ -4,7 +4,6 @@ import { createEvent } from '@/lib/google-calendar'
 
 // Chamado pelo n8n quando o agente quer agendar uma reuniao
 // POST /api/internal/calendar/create-event
-// Body: { agent_id, lead_name, lead_email, attendee_emails, summary, description, start_datetime, end_datetime, timezone }
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -26,22 +25,21 @@ export async function POST(request: NextRequest) {
 
     const db = getSupabaseAdmin()
 
-    // Busca o refresh_token, calendar_id e notification_email do agente
+    // Busca dados do agente - seleciona campos que certamente existem
     const { data: agent, error: agentError } = await db
       .from('agents')
-      .select('google_refresh_token, google_calendar_id, name, notification_email')
+      .select('google_refresh_token, google_calendar_id, name')
       .eq('id', agent_id)
       .single()
 
     if (agentError || !agent) {
-      return NextResponse.json({ error: 'Agente nao encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'Agente nao encontrado', detail: agentError?.message }, { status: 404 })
     }
 
     if (!agent.google_refresh_token) {
       return NextResponse.json({
         error: 'Google Agenda nao conectado para este agente',
-        status: 'not_connected',
-        action_needed: 'Conecte o Google Agenda no painel admin do agente'
+        status: 'not_connected'
       }, { status: 422 })
     }
 
@@ -59,17 +57,14 @@ export async function POST(request: NextRequest) {
       endDt = new Date(tomorrow.getTime() + 60 * 60 * 1000).toISOString()
     }
 
-    // Monta lista de convidados
+    // Monta lista de convidados (lead + emails adicionais passados pelo n8n)
     const allAttendees: { email: string }[] = []
     if (lead_email) allAttendees.push({ email: lead_email })
-    // Email de notificacao configurado pelo cliente no painel admin
-    if ((agent as any).notification_email) allAttendees.push({ email: (agent as any).notification_email })
-    // Emails adicionais passados pelo n8n
     if (Array.isArray(attendee_emails)) {
       attendee_emails.forEach((e: string) => { if (e) allAttendees.push({ email: e }) })
     }
 
-    // Cria o evento no Google Calendar (sendUpdates=all envia notificacoes)
+    // Cria o evento (sendUpdates=all envia email de convite para todos os convidados)
     const event = await createEvent(agent.google_refresh_token, calendarId, {
       summary: summary || `Reuniao com ${lead_name || 'Cliente'}`,
       description: description || `Agendamento via agente IA ${agent.name}`,
