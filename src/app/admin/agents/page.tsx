@@ -102,6 +102,7 @@ interface Agent {
   chatwoot_inbox_id: number | null;
   google_connected: boolean;
   google_calendar_id: string | null;
+  notification_email: string | null;
   chatwoot_website_token: string | null;
   chatwoot_instagram_inbox_id: number | null;
   conversations_count: number;
@@ -186,6 +187,7 @@ export default function AgentsPage() {
           features: updated.features ?? {},
           feature_config: updated.feature_config ?? {},
           instagramInboxId: String(updated.chatwoot_instagram_inbox_id ?? ""),
+          notification_email: updated.notification_email ?? "",
         });
       }
     }
@@ -215,8 +217,8 @@ export default function AgentsPage() {
   const [editForm, setEditForm] = useState<{
     name: string; channel: string; phone_number: string; chatwoot_inbox_id: string;
     personality: string; instructions: string; groq_api_key: string; features: Record<string, boolean>;
-    feature_config: Record<string, string>; instagramInboxId: string;
-  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", groq_api_key: "", features: {}, feature_config: {}, instagramInboxId: "" });
+    feature_config: Record<string, string>; instagramInboxId: string; notification_email: string;
+  }>({ name: "", channel: "whatsapp", phone_number: "", chatwoot_inbox_id: "", personality: "", instructions: "", groq_api_key: "", features: {}, feature_config: {}, instagramInboxId: "", notification_email: "" });
 
   useEffect(() => { load(); }, []);
 
@@ -235,6 +237,7 @@ export default function AgentsPage() {
       features: agent.features ?? {},
       feature_config: agent.feature_config ?? {},
       instagramInboxId: String(agent.chatwoot_instagram_inbox_id ?? ""),
+      notification_email: agent.notification_email ?? "",
     });
   }
 
@@ -264,6 +267,7 @@ export default function AgentsPage() {
           features: editForm.features,
           feature_config: editForm.feature_config,
           chatwoot_instagram_inbox_id: editForm.instagramInboxId ? parseInt(editForm.instagramInboxId) : null,
+          notification_email: editForm.notification_email || null,
         }),
       });
       if (!res.ok) {
@@ -368,7 +372,6 @@ export default function AgentsPage() {
     if (!cfgRes.ok) { showToast("error", "Erro ao buscar config do Chatwoot"); setConnectingInstagram(false); return; }
     const { url: chatwootUrl, account_id } = await cfgRes.json();
 
-    // Snapshot ANTES de abrir o popup
     const beforeRes = await fetch("/api/admin/chatwoot/inboxes");
     const beforeInboxes: ChaiwootInbox[] = beforeRes.ok ? await beforeRes.json() : [];
     const beforeIds = new Set(beforeInboxes.map((i: ChaiwootInbox) => i.id));
@@ -385,20 +388,13 @@ export default function AgentsPage() {
     const timer = setInterval(async () => {
       if (popup.closed) {
         clearInterval(timer);
-
-        // Aguarda 2s para o Chatwoot terminar de salvar
         await new Promise(r => setTimeout(r, 2000));
-
         const afterRes = await fetch("/api/admin/chatwoot/inboxes");
         setConnectingInstagram(false);
         if (!afterRes.ok) { setInstagramFallback(true); return; }
         const afterInboxes: ChaiwootInbox[] = await afterRes.json();
-
-        // Detecta QUALQUER inbox nova (independente do tipo)
         const newInboxes = afterInboxes.filter(i => !beforeIds.has(i.id));
-
         if (newInboxes.length > 0) {
-          // Prioriza inboxes com "instagram" no nome ou tipo
           const instagramFirst = newInboxes.sort((a, b) => {
             const aMatch = a.channel_type.toLowerCase().includes("instagram") || a.name.toLowerCase().includes("instagram") ? -1 : 0;
             const bMatch = b.channel_type.toLowerCase().includes("instagram") || b.name.toLowerCase().includes("instagram") ? -1 : 0;
@@ -406,7 +402,6 @@ export default function AgentsPage() {
           });
           await saveInstagramInboxId(instagramFirst[0].id);
         } else {
-          // Nenhuma inbox nova — mostrar fallback manual
           setInstagramFallback(true);
         }
       }
@@ -590,7 +585,7 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              {/* Inbox Chatwoot (WhatsApp) — criação automática */}
+              {/* Inbox Chatwoot (WhatsApp) */}
               <div>
                 <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>
                   Inbox WhatsApp (Chatwoot)
@@ -696,6 +691,24 @@ export default function AgentsPage() {
                 <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "6px" }}>
                   Faça login com o Gmail do cliente para autorizar o agendamento automático.
                 </p>
+
+                {/* Email de notificação */}
+                <div style={{ marginTop: "12px" }}>
+                  <label style={{ display: "block", color: "var(--gray-600)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", marginBottom: "5px" }}>
+                    📬 Email de notificação da equipe
+                  </label>
+                  <input
+                    className="input"
+                    type="email"
+                    value={editForm.notification_email}
+                    onChange={e => setEditForm(f => ({ ...f, notification_email: e.target.value }))}
+                    placeholder="equipe@suaempresa.com"
+                    style={{ fontSize: "13px" }}
+                  />
+                  <p style={{ color: "var(--gray-400)", fontSize: "11px", marginTop: "4px" }}>
+                    Receba um email automático a cada agendamento confirmado pelo agente.
+                  </p>
+                </div>
               </div>
 
               {/* Chat no Site */}
@@ -715,7 +728,7 @@ export default function AgentsPage() {
                         <button
                           onClick={() => fixInbox()}
                           disabled={fixingInbox}
-                          title="Corrige 'Estamos ausentes' e conecta ao agente de IA"
+                          title="Corrige Estamos ausentes e conecta ao agente de IA"
                           style={{ display: "flex", alignItems: "center", gap: "5px", color: "#7c3aed", fontSize: "11px", padding: "4px 8px", borderRadius: "6px", border: "1px solid #ddd6fe", background: "#f5f3ff", cursor: fixingInbox ? "not-allowed" : "pointer", fontWeight: 600 }}
                         >
                           <AlertCircle size={11} /> {fixingInbox ? "Corrigindo..." : "Corrigir IA"}

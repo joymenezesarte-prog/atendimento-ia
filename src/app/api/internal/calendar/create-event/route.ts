@@ -2,6 +2,63 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { createEvent } from '@/lib/google-calendar'
 
+// Envia email de notificação via Resend (sem SDK, puro fetch)
+async function sendAppointmentNotification(opts: {
+  to: string
+  lead_name: string
+  lead_phone: string | null
+  lead_email: string | null
+  service: string
+  date: string
+  start_time: string
+  meet_link: string | null
+  agent_name: string
+}) {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) {
+    console.warn('[calendar] RESEND_API_KEY nao configurada — notificacao de email ignorada')
+    return
+  }
+
+  const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <noreply@atendimentoia.cloud>'
+  const subject = `📅 Novo agendamento: ${opts.lead_name} — ${opts.date} às ${opts.start_time.slice(0, 5)}`
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+      <h2 style="color:#111;margin-bottom:4px">📅 Novo agendamento confirmado</h2>
+      <p style="color:#555;margin-top:0">Agente: <strong>${opts.agent_name}</strong></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:16px 0"/>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="padding:6px 0;color:#888;width:130px">Cliente</td><td style="padding:6px 0;font-weight:600">${opts.lead_name}</td></tr>
+        ${opts.lead_phone ? `<tr><td style="padding:6px 0;color:#888">Telefone</td><td style="padding:6px 0">${opts.lead_phone}</td></tr>` : ''}
+        ${opts.lead_email ? `<tr><td style="padding:6px 0;color:#888">Email</td><td style="padding:6px 0">${opts.lead_email}</td></tr>` : ''}
+        <tr><td style="padding:6px 0;color:#888">Serviço</td><td style="padding:6px 0">${opts.service}</td></tr>
+        <tr><td style="padding:6px 0;color:#888">Data</td><td style="padding:6px 0">${opts.date}</td></tr>
+        <tr><td style="padding:6px 0;color:#888">Horário</td><td style="padding:6px 0">${opts.start_time.slice(0, 5)}</td></tr>
+        ${opts.meet_link ? `<tr><td style="padding:6px 0;color:#888">Google Meet</td><td style="padding:6px 0"><a href="${opts.meet_link}" style="color:#1a73e8">${opts.meet_link}</a></td></tr>` : ''}
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:16px 0"/>
+      <p style="color:#888;font-size:12px">Enviado automaticamente pelo agente IA · Atendimento IA</p>
+    </div>
+  `
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [opts.to], subject, html }),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      console.error('[calendar] Erro ao enviar email via Resend:', err)
+    } else {
+      console.log('[calendar] Email de notificacao enviado para', opts.to)
+    }
+  } catch (e) {
+    console.error('[calendar] Excecao ao enviar email:', e)
+  }
+}
+
 // Chamado pelo n8n quando o agente quer agendar uma reuniao
 // POST /api/internal/calendar/create-event
 export async function POST(request: NextRequest) {
@@ -29,10 +86,10 @@ export async function POST(request: NextRequest) {
 
     const db = getSupabaseAdmin()
 
-    // Busca dados do agente incluindo client_id para salvar o appointment
+    // Busca dados do agente incluindo client_id e notification_email
     const { data: agent, error: agentError } = await db
       .from('agents')
-      .select('google_refresh_token, google_calendar_id, name, client_id')
+      .select('google_refresh_token, google_calendar_id, name, client_id, notification_email')
       .eq('id', agent_id)
       .single()
 
@@ -119,6 +176,22 @@ export async function POST(request: NextRequest) {
       }
     } catch (apptErr) {
       console.error('Excecao ao salvar appointment:', apptErr)
+    }
+
+    // Envia email de notificacao para a equipe (se notification_email configurado)
+    const notifEmail = agent.notification_email
+    if (notifEmail) {
+      await sendAppointmentNotification({
+        to: notifEmail,
+        lead_name: lead_name || 'Lead',
+        lead_phone: lead_phone || null,
+        lead_email: lead_email || null,
+        service: service || summary || `Reuniao com ${lead_name || 'Cliente'}`,
+        date: datePart,
+        start_time: startTimePart,
+        meet_link: event.hangoutLink || null,
+        agent_name: agent.name,
+      })
     }
 
     return NextResponse.json({
