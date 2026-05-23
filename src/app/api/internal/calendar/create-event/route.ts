@@ -9,7 +9,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       agent_id,
+      lead_id,
       lead_name,
+      lead_phone,
       lead_email,
       attendee_emails = [],
       summary,
@@ -17,6 +19,8 @@ export async function POST(request: NextRequest) {
       start_datetime,
       end_datetime,
       timezone = 'America/Sao_Paulo',
+      service,
+      notes,
     } = body
 
     if (!agent_id) {
@@ -25,10 +29,10 @@ export async function POST(request: NextRequest) {
 
     const db = getSupabaseAdmin()
 
-    // Busca dados do agente - seleciona campos que certamente existem
+    // Busca dados do agente incluindo client_id para salvar o appointment
     const { data: agent, error: agentError } = await db
       .from('agents')
-      .select('google_refresh_token, google_calendar_id, name')
+      .select('google_refresh_token, google_calendar_id, name, client_id')
       .eq('id', agent_id)
       .single()
 
@@ -73,19 +77,11 @@ export async function POST(request: NextRequest) {
       ...(allAttendees.length > 0 ? { attendees: allAttendees } : {}),
     })
 
-    return NextResponse.json({
-      status: 'created',
-      event_id: event.id,
-      event_link: event.htmlLink,
-      calendar_id: calendarId,
-      start: startDt,
-      end: endDt,
-    })
-  } catch (err: any) {
-    console.error('Erro ao criar evento no Google Calendar:', err)
-    return NextResponse.json({
-      error: err.message || 'Erro interno ao criar evento',
-      status: 'error'
-    }, { status: 500 })
-  }
-}
+    // Salva o agendamento na tabela appointments do Supabase
+    // Extrai date, start_time e end_time do datetime
+    const startDate = new Date(startDt)
+    const endDate = new Date(endDt)
+
+    // Formata data como YYYY-MM-DD e hora como HH:MM:SS no fuso configurado
+    const toLocalParts = (dt: Date) => {
+      const iso = dt.toLocaleString('sv-

@@ -72,20 +72,37 @@ export async function createEvent(
     start: { dateTime: string; timeZone?: string }
     end: { dateTime: string; timeZone?: string }
     attendees?: { email: string }[]
-  }
-): Promise<{ id: string; htmlLink: string }> {
+    conferenceData?: object
+  },
+  withMeet = true
+): Promise<{ id: string; htmlLink: string; hangoutLink?: string }> {
   const accessToken = await getAccessToken(refreshToken)
-  const res = await fetch(
-    `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(event),
-    }
-  )
+
+  // Adiciona Google Meet automaticamente
+  const eventBody = withMeet
+    ? {
+        ...event,
+        conferenceData: {
+          createRequest: {
+            requestId: `meet-${Date.now()}`,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        },
+      }
+    : event
+
+  const url =
+    `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events` +
+    `?sendUpdates=all${withMeet ? '&conferenceDataVersion=1' : ''}`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(eventBody),
+  })
   if (!res.ok) {
     const err = await res.json()
     throw new Error(err.error?.message || 'Erro ao criar evento')
@@ -102,18 +119,4 @@ export async function getAvailableSlots(
   const accessToken = await getAccessToken(refreshToken)
   const res = await fetch(
     `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events?` +
-    new URLSearchParams({
-      timeMin: dateMin,
-      timeMax: dateMax,
-      singleEvents: 'true',
-      orderBy: 'startTime',
-    }),
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  )
-  if (!res.ok) throw new Error('Erro ao buscar eventos')
-  const data = await res.json()
-  return (data.items || []).map((e: any) => ({
-    start: e.start?.dateTime || e.start?.date,
-    end: e.end?.dateTime || e.end?.date,
-  }))
-}
+    new 
