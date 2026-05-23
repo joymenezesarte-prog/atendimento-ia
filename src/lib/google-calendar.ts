@@ -119,4 +119,18 @@ export async function getAvailableSlots(
   const accessToken = await getAccessToken(refreshToken)
   const res = await fetch(
     `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events?` +
-    new 
+    new URLSearchParams({
+      timeMin: dateMin,
+      timeMax: dateMax,
+      singleEvents: 'true',
+      orderBy: 'startTime',
+    }),
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  )
+  if (!res.ok) throw new Error('Erro ao buscar eventos')
+  const data = await res.json()
+  return (data.items || []).map((e: any) => ({
+    start: e.start?.dateTime || e.start?.date,
+    end: e.end?.dateTime || e.end?.date,
+  }))
+}
