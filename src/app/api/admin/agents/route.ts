@@ -12,6 +12,7 @@ export async function GET() {
       id, name, channel, phone_number, status, personality, instructions,
       features, feature_config, chatwoot_inbox_id, chatwoot_website_token, chatwoot_instagram_inbox_id,
       google_calendar_id, google_refresh_token, notification_email,
+      resend_api_key, gemini_api_key,
       conversations_count, leads_count, created_at, client_id,
       clients(id, company_name)
     `)

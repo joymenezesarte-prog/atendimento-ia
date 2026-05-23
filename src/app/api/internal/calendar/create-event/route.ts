@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { createEvent } from '@/lib/google-calendar'
 
-// Envia email de notificação via Resend (sem SDK, puro fetch)
+// Envia email de notificacao via Resend (sem SDK, puro fetch)
+// Usa a chave do agente se configurada, senao usa a chave global do sistema
 async function sendAppointmentNotification(opts: {
   to: string
   lead_name: string
@@ -13,28 +14,30 @@ async function sendAppointmentNotification(opts: {
   start_time: string
   meet_link: string | null
   agent_name: string
+  resend_api_key?: string | null
 }) {
-  const apiKey = process.env.RESEND_API_KEY
+  // Prioridade: chave do agente > chave global do sistema
+  const apiKey = opts.resend_api_key || process.env.RESEND_API_KEY
   if (!apiKey) {
-    console.warn('[calendar] RESEND_API_KEY nao configurada — notificacao de email ignorada')
+    console.warn('[calendar] Nenhuma RESEND_API_KEY configurada para este agente — notificacao ignorada')
     return
   }
 
-  const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <noreply@atendimentoia.cloud>'
-  const subject = `📅 Novo agendamento: ${opts.lead_name} — ${opts.date} às ${opts.start_time.slice(0, 5)}`
+  const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <onboarding@resend.dev>'
+  const subject = `Novo agendamento: ${opts.lead_name} — ${opts.date} as ${opts.start_time.slice(0, 5)}`
 
   const html = `
     <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
-      <h2 style="color:#111;margin-bottom:4px">📅 Novo agendamento confirmado</h2>
+      <h2 style="color:#111;margin-bottom:4px">Novo agendamento confirmado</h2>
       <p style="color:#555;margin-top:0">Agente: <strong>${opts.agent_name}</strong></p>
       <hr style="border:none;border-top:1px solid #eee;margin:16px 0"/>
       <table style="width:100%;border-collapse:collapse">
         <tr><td style="padding:6px 0;color:#888;width:130px">Cliente</td><td style="padding:6px 0;font-weight:600">${opts.lead_name}</td></tr>
         ${opts.lead_phone ? `<tr><td style="padding:6px 0;color:#888">Telefone</td><td style="padding:6px 0">${opts.lead_phone}</td></tr>` : ''}
         ${opts.lead_email ? `<tr><td style="padding:6px 0;color:#888">Email</td><td style="padding:6px 0">${opts.lead_email}</td></tr>` : ''}
-        <tr><td style="padding:6px 0;color:#888">Serviço</td><td style="padding:6px 0">${opts.service}</td></tr>
+        <tr><td style="padding:6px 0;color:#888">Servico</td><td style="padding:6px 0">${opts.service}</td></tr>
         <tr><td style="padding:6px 0;color:#888">Data</td><td style="padding:6px 0">${opts.date}</td></tr>
-        <tr><td style="padding:6px 0;color:#888">Horário</td><td style="padding:6px 0">${opts.start_time.slice(0, 5)}</td></tr>
+        <tr><td style="padding:6px 0;color:#888">Horario</td><td style="padding:6px 0">${opts.start_time.slice(0, 5)}</td></tr>
         ${opts.meet_link ? `<tr><td style="padding:6px 0;color:#888">Google Meet</td><td style="padding:6px 0"><a href="${opts.meet_link}" style="color:#1a73e8">${opts.meet_link}</a></td></tr>` : ''}
       </table>
       <hr style="border:none;border-top:1px solid #eee;margin:16px 0"/>
@@ -59,8 +62,8 @@ async function sendAppointmentNotification(opts: {
   }
 }
 
-// Chamado pelo n8n quando o agente quer agendar uma reuniao
 // POST /api/internal/calendar/create-event
+// Chamado pelo n8n quando o agente quer agendar uma reuniao
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -86,10 +89,10 @@ export async function POST(request: NextRequest) {
 
     const db = getSupabaseAdmin()
 
-    // Busca dados do agente incluindo client_id e notification_email
+    // Busca dados do agente incluindo todas as chaves configuradas pelo cliente
     const { data: agent, error: agentError } = await db
       .from('agents')
-      .select('google_refresh_token, google_calendar_id, name, client_id, notification_email')
+      .select('google_refresh_token, google_calendar_id, name, client_id, notification_email, resend_api_key')
       .eq('id', agent_id)
       .single()
 
@@ -118,7 +121,7 @@ export async function POST(request: NextRequest) {
       endDt = new Date(tomorrow.getTime() + 60 * 60 * 1000).toISOString()
     }
 
-    // Monta lista de convidados (lead + emails adicionais)
+    // Monta lista de convidados
     const allAttendees: { email: string }[] = []
     if (lead_email) allAttendees.push({ email: lead_email })
     if (Array.isArray(attendee_emails)) {
@@ -134,11 +137,10 @@ export async function POST(request: NextRequest) {
       ...(allAttendees.length > 0 ? { attendees: allAttendees } : {}),
     })
 
-    // Salva o agendamento na tabela appointments do Supabase
+    // Extrai date/time no fuso correto
     const startDate = new Date(startDt)
     const endDate = new Date(endDt)
 
-    // Extrai date/time no fuso correto usando sv-SE locale (YYYY-MM-DD HH:MM:SS)
     const toLocalParts = (dt: Date) => {
       const iso = dt.toLocaleString('sv-SE', { timeZone: timezone })
       const [datePart, timePart] = iso.split(' ')
@@ -148,6 +150,7 @@ export async function POST(request: NextRequest) {
     const { datePart, timePart: startTimePart } = toLocalParts(startDate)
     const { timePart: endTimePart } = toLocalParts(endDate)
 
+    // Salva o agendamento no banco
     let savedAppointmentId: string | null = null
     try {
       const meetNote = event.hangoutLink ? `Link Meet: ${event.hangoutLink}` : null
@@ -170,7 +173,7 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (apptError) {
-        console.error('Erro ao salvar appointment no DB:', apptError)
+        console.error('Erro ao salvar appointment:', apptError)
       } else {
         savedAppointmentId = appt.id
       }
@@ -178,11 +181,10 @@ export async function POST(request: NextRequest) {
       console.error('Excecao ao salvar appointment:', apptErr)
     }
 
-    // Envia email de notificacao para a equipe (se notification_email configurado)
-    const notifEmail = agent.notification_email
-    if (notifEmail) {
+    // Envia notificacao por email para a equipe usando a chave do proprio agente/cliente
+    if (agent.notification_email) {
       await sendAppointmentNotification({
-        to: notifEmail,
+        to: agent.notification_email,
         lead_name: lead_name || 'Lead',
         lead_phone: lead_phone || null,
         lead_email: lead_email || null,
@@ -191,6 +193,7 @@ export async function POST(request: NextRequest) {
         start_time: startTimePart,
         meet_link: event.hangoutLink || null,
         agent_name: agent.name,
+        resend_api_key: agent.resend_api_key || null,
       })
     }
 
