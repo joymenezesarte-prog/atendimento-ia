@@ -23,7 +23,7 @@ async function sendAppointmentNotification(opts: {
     return
   }
 
-  const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <onboarding@resend.dev>'
+  const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <noreply@atendimentoia.cloud>'
   const subject = `Novo agendamento: ${opts.lead_name} — ${opts.date} as ${opts.start_time.slice(0, 5)}`
 
   const html = `
