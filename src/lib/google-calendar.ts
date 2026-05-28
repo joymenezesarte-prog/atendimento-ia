@@ -78,7 +78,6 @@ export async function createEvent(
 ): Promise<{ id: string; htmlLink: string; hangoutLink?: string }> {
   const accessToken = await getAccessToken(refreshToken)
 
-  // Adiciona Google Meet automaticamente
   const eventBody = withMeet
     ? {
         ...event,
@@ -108,6 +107,55 @@ export async function createEvent(
     throw new Error(err.error?.message || 'Erro ao criar evento')
   }
   return res.json()
+}
+
+export async function updateEvent(
+  refreshToken: string,
+  calendarId: string,
+  eventId: string,
+  updates: {
+    summary?: string
+    description?: string
+    start?: { dateTime: string; timeZone?: string }
+    end?: { dateTime: string; timeZone?: string }
+  }
+): Promise<{ id: string; htmlLink: string; hangoutLink?: string }> {
+  const accessToken = await getAccessToken(refreshToken)
+  const url =
+    `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}` +
+    `?sendUpdates=all&conferenceDataVersion=1`
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.error?.message || 'Erro ao atualizar evento')
+  }
+  return res.json()
+}
+
+export async function cancelEvent(
+  refreshToken: string,
+  calendarId: string,
+  eventId: string
+): Promise<void> {
+  const accessToken = await getAccessToken(refreshToken)
+  const url =
+    `${GOOGLE_CALENDAR_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}` +
+    `?sendUpdates=all`
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok && res.status !== 410) {
+    const err = await res.text()
+    throw new Error(err || 'Erro ao cancelar evento')
+  }
 }
 
 export async function getAvailableSlots(
