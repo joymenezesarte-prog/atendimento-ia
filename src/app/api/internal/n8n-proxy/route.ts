@@ -43,7 +43,6 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  // Activate workflow
   const secret = req.headers.get('x-proxy-secret')
   if (secret !== PROXY_SECRET) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -51,13 +50,12 @@ export async function POST(req: NextRequest) {
   const action = req.nextUrl.searchParams.get('action')
 
   if (action === 'activate') {
-    const body = await req.json()
     const res = await fetch(`${N8N_INTERNAL}/api/v1/workflows/${workflowId}/activate`, {
       method: 'POST',
-      headers: { 'X-N8N-API-KEY': N8N_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      headers: { 'X-N8N-API-KEY': N8N_API_KEY }
     })
-    const data = await res.json()
+    const text = await res.text()
+    const data = text ? JSON.parse(text) : { activated: true }
     return NextResponse.json(data, { status: res.status })
   }
 
