@@ -2,9 +2,32 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 import { createEvent } from '@/lib/google-calendar'
 
-// Envia email de notificacao via Resend (sem SDK, puro fetch)
-// Usa a chave do agente se configurada, senao usa a chave global do sistema
-async function sendAppointmentNotification(opts: {
+async function sendEmail(opts: {
+  to: string
+  subject: string
+  html: string
+  apiKey: string
+  from: string
+}) {
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${opts.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: opts.from, to: [opts.to], subject: opts.subject, html: opts.html }),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      console.error('[calendar] Erro Resend para', opts.to, ':', err)
+    } else {
+      console.log('[calendar] Email enviado para', opts.to)
+    }
+  } catch (e) {
+    console.error('[calendar] Excecao email:', e)
+  }
+}
+
+// Email interno para a equipe
+async function sendTeamNotification(opts: {
   to: string
   lead_name: string
   lead_phone: string | null
@@ -16,16 +39,10 @@ async function sendAppointmentNotification(opts: {
   agent_name: string
   resend_api_key?: string | null
 }) {
-  // Prioridade: chave do agente > chave global do sistema
   const apiKey = opts.resend_api_key || process.env.RESEND_API_KEY
-  if (!apiKey) {
-    console.warn('[calendar] Nenhuma RESEND_API_KEY configurada para este agente — notificacao ignorada')
-    return
-  }
-
+  if (!apiKey) return
   const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <noreply@atendimentoia.cloud>'
   const subject = `Novo agendamento: ${opts.lead_name} — ${opts.date} as ${opts.start_time.slice(0, 5)}`
-
   const html = `
     <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
       <h2 style="color:#111;margin-bottom:4px">Novo agendamento confirmado</h2>
@@ -44,26 +61,50 @@ async function sendAppointmentNotification(opts: {
       <p style="color:#888;font-size:12px">Enviado automaticamente pelo agente IA · Atendimento IA</p>
     </div>
   `
+  await sendEmail({ to: opts.to, subject, html, apiKey, from })
+}
 
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [opts.to], subject, html }),
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      console.error('[calendar] Erro ao enviar email via Resend:', err)
-    } else {
-      console.log('[calendar] Email de notificacao enviado para', opts.to)
-    }
-  } catch (e) {
-    console.error('[calendar] Excecao ao enviar email:', e)
-  }
+// Email de confirmacao para o lead (cliente)
+async function sendLeadConfirmation(opts: {
+  to: string
+  lead_name: string
+  service: string
+  date: string
+  start_time: string
+  meet_link: string | null
+  resend_api_key?: string | null
+}) {
+  const apiKey = opts.resend_api_key || process.env.RESEND_API_KEY
+  if (!apiKey) return
+  const from = process.env.NOTIFICATION_FROM_EMAIL || 'Atendimento IA <noreply@atendimentoia.cloud>'
+
+  const [year, month, day] = opts.date.split('-')
+  const months = ['janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']
+  const dateFormatted = `${parseInt(day)} de ${months[parseInt(month) - 1]} de ${year}`
+
+  const subject = `Sua reuniao esta confirmada — ${dateFormatted} as ${opts.start_time.slice(0, 5)}`
+  const html = `
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff">
+      <h2 style="color:#111;margin-bottom:4px">✅ Reuniao confirmada!</h2>
+      <p style="color:#555;margin-top:0">Ola, <strong>${opts.lead_name}</strong>! Seu agendamento foi confirmado com sucesso.</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:16px 0"/>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="padding:8px 0;color:#888;width:120px">Assunto</td><td style="padding:8px 0;font-weight:600">${opts.service}</td></tr>
+        <tr><td style="padding:8px 0;color:#888">Data</td><td style="padding:8px 0">${dateFormatted}</td></tr>
+        <tr><td style="padding:8px 0;color:#888">Horario</td><td style="padding:8px 0">${opts.start_time.slice(0, 5)}</td></tr>
+        ${opts.meet_link ? `
+        <tr><td style="padding:8px 0;color:#888">Link Meet</td><td style="padding:8px 0">
+          <a href="${opts.meet_link}" style="display:inline-block;background:#1a73e8;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px">🎥 Entrar na reuniao</a>
+        </td></tr>` : ''}
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:16px 0"/>
+      <p style="color:#aaa;font-size:12px">Se precisar reagendar ou cancelar, responda esta conversa.</p>
+    </div>
+  `
+  await sendEmail({ to: opts.to, subject, html, apiKey, from })
 }
 
 // POST /api/internal/calendar/create-event
-// Chamado pelo n8n quando o agente quer agendar uma reuniao
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -89,7 +130,6 @@ export async function POST(request: NextRequest) {
 
     const db = getSupabaseAdmin()
 
-    // Busca dados do agente incluindo todas as chaves configuradas pelo cliente
     const { data: agent, error: agentError } = await db
       .from('agents')
       .select('google_refresh_token, google_calendar_id, name, client_id, notification_email, resend_api_key')
@@ -109,26 +149,23 @@ export async function POST(request: NextRequest) {
 
     const calendarId = agent.google_calendar_id || 'primary'
 
-    // Define horarios padrao se nao fornecidos (amanha as 10h BRT)
     let startDt = start_datetime
     let endDt = end_datetime
 
     if (!startDt) {
       const tomorrow = new Date()
       tomorrow.setDate(tomorrow.getDate() + 1)
-      tomorrow.setHours(13, 0, 0, 0) // 10h BRT = 13h UTC
+      tomorrow.setHours(13, 0, 0, 0)
       startDt = tomorrow.toISOString()
       endDt = new Date(tomorrow.getTime() + 60 * 60 * 1000).toISOString()
     }
 
-    // Monta lista de convidados
     const allAttendees: { email: string }[] = []
     if (lead_email) allAttendees.push({ email: lead_email })
     if (Array.isArray(attendee_emails)) {
       attendee_emails.forEach((e: string) => { if (e && e !== lead_email) allAttendees.push({ email: e }) })
     }
 
-    // Cria o evento no Google Calendar com Google Meet automatico
     const event = await createEvent(agent.google_refresh_token, calendarId, {
       summary: summary || `Reuniao com ${lead_name || 'Cliente'}`,
       description: description || `Agendamento via agente IA ${agent.name}`,
@@ -137,7 +174,6 @@ export async function POST(request: NextRequest) {
       ...(allAttendees.length > 0 ? { attendees: allAttendees } : {}),
     })
 
-    // Extrai date/time no fuso correto
     const startDate = new Date(startDt)
     const endDate = new Date(endDt)
 
@@ -150,7 +186,6 @@ export async function POST(request: NextRequest) {
     const { datePart, timePart: startTimePart } = toLocalParts(startDate)
     const { timePart: endTimePart } = toLocalParts(endDate)
 
-    // Salva o agendamento no banco
     let savedAppointmentId: string | null = null
     try {
       const meetNote = event.hangoutLink ? `Link Meet: ${event.hangoutLink}` : null
@@ -172,27 +207,39 @@ export async function POST(request: NextRequest) {
         .select('id')
         .single()
 
-      if (apptError) {
-        console.error('Erro ao salvar appointment:', apptError)
-      } else {
-        savedAppointmentId = appt.id
-      }
+      if (apptError) console.error('Erro ao salvar appointment:', apptError)
+      else savedAppointmentId = appt.id
     } catch (apptErr) {
       console.error('Excecao ao salvar appointment:', apptErr)
     }
 
-    // Envia notificacao por email para a equipe usando a chave do proprio agente/cliente
+    const serviceLabel = service || summary || `Reuniao com ${lead_name || 'Cliente'}`
+
+    // Email para equipe
     if (agent.notification_email) {
-      await sendAppointmentNotification({
+      await sendTeamNotification({
         to: agent.notification_email,
         lead_name: lead_name || 'Lead',
         lead_phone: lead_phone || null,
         lead_email: lead_email || null,
-        service: service || summary || `Reuniao com ${lead_name || 'Cliente'}`,
+        service: serviceLabel,
         date: datePart,
         start_time: startTimePart,
         meet_link: event.hangoutLink || null,
         agent_name: agent.name,
+        resend_api_key: agent.resend_api_key || null,
+      })
+    }
+
+    // Email de confirmacao para o lead
+    if (lead_email) {
+      await sendLeadConfirmation({
+        to: lead_email,
+        lead_name: lead_name || 'Cliente',
+        service: serviceLabel,
+        date: datePart,
+        start_time: startTimePart,
+        meet_link: event.hangoutLink || null,
         resend_api_key: agent.resend_api_key || null,
       })
     }
